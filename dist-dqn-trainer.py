@@ -1,11 +1,124 @@
-import math
-import os
+import csv
+import random
+
+from collections import deque
+
 import numpy as np
 
 import tensorflow as tf
 
-from data_sampler  import Sampler
-from replay_buffer import ReplayBuffer
+class Sampler(object):
+    """
+    Sampler Class is adopted from PGQ Repository (https://github.com/abhishm/PGQ)
+    by Abhishek Mishra
+    """
+    def __init__(self,
+                 csv_file,
+                 num_episodes=10,
+                 max_step=20):
+        self._num_episodes = num_episodes
+        self._max_step = max_step
+        self._csv_file = csv_file
+
+        self._field_names = ("state", "action", "reward", "next_state", "done")
+        self._csv_file_reader = self._get_csv_file_reader(self._field_names, self._csv_file)
+
+    def _get_csv_file_reader(self, field_names, csv_file):
+        with open(csv_file, 'rU') as data:
+            reader = csv.DictReader(data, fieldnames=field_names)
+            for row in reader:
+                yield row
+
+    def collect_one_episode(self):
+        states, actions, rewards, next_states, dones = [], [], [], [], []
+
+        for t in xrange(self._max_step):
+            try:
+                data = next(self._csv_file_reader)
+            except StopIteration:
+                print("Reaching the end of file {}, reading from the beginning again".format(self._csv_file))
+                self._csv_file_reader = self._get_csv_file_reader(self._field_names, self._csv_file)
+                data = next(self._csv_file_reader)
+
+            states.append(np.array(map(lambda x: float(x.strip()), data["state"][1:-1].split(","))))
+            actions.append(float(data["action"].strip()))
+            rewards.append(float(data["reward"].strip()))
+            next_states.append(np.array(map(lambda x: float(x.strip()), data["next_state"][1:-1].split(","))))
+            dones.append(data["done"].lower() == "true")
+
+        return dict(states=states,
+                    actions=actions,
+                    rewards=rewards,
+                    next_states=next_states,
+                    dones=dones
+                )
+
+    def collect_one_batch(self):
+        episodes = []
+        for i_episode in xrange(self.num_episodes):
+            episodes.append(self.collect_one_episode())
+        # prepare input
+        states = np.concatenate([episode["states"] for episode in episodes])
+        actions = np.concatenate([episode["actions"] for episode in episodes])
+        rewards = np.concatenate([episode["rewards"] for episode in episodes])
+        next_states = np.concatenate([episode["next_states"] for episode in episodes])
+        dones = np.concatenate([episode["dones"] for episode in episodes])
+
+        return dict(states=states,
+                    actions=actions,
+                    rewards=rewards,
+                    next_states=next_states,
+                    dones=dones
+                )
+
+
+class ReplayBuffer(object):
+    """
+    Adopted from PGQ Repository (https://github.com/abhishm/PGQ) by Abhishek Mishra
+    """
+    def __init__(self, buffer_size):
+        self.buffer_size = buffer_size
+        self.num_items = 0
+        self.buffer = deque()
+
+    def sample(self, batch_size):
+        return random.sample(self.buffer, batch_size)
+
+    def add(self, item):
+        if self.num_items < self.buffer_size:
+            self.buffer.append(item)
+            self.num_items += 1
+        else:
+            self.buffer.popleft()
+            self.buffer.append(item)
+
+    def add_items(self, items):
+        for item in items:
+            self.add(item)
+
+    def add_batch(self, batch):
+        keys = ["states", "actions", "rewards", "next_states", "dones"]
+        items = []
+        for i in range(len(batch["states"])):
+            item = []
+            for key in keys:
+                item.append(batch[key][i])
+            items.append(item)
+        self.add_items(items)
+
+    def sample_batch(self, batch_size):
+        keys = ["states", "actions", "rewards", "next_states", "dones"]
+        samples = self.sample(batch_size)
+        samples = zip(*samples)
+        batch = {key: np.array(value) for key, value in zip(keys, samples)}
+        return batch
+
+    def count(self):
+        return self.num_items
+
+    def erase(self):
+        self.buffer = deque()
+        self.num_items = 0
 
 # Define parameters
 flags = tf.app.flags
@@ -75,29 +188,26 @@ def main(_):
     if FLAGS.job_name == "ps":
         server.join()
     elif FLAGS.job_name == "worker":
-        is_chief = (FLAGS.task_index == 0)
 
         with tf.device(tf.train.replica_device_setter(
                 worker_device="/job:worker/task:%d" % FLAGS.task_index,
                 cluster=cluster)):
 
-            global_step = tf.Variable(0, name="global_step", trainable=False)
+            adam_optimizer = tf.train.AdamOptimizer(learning_rate=learning_rate)
 
-            adamOptimizer = tf.train.AdamOptimizer(learning_rate=learning_rate)
-
-            optimizer = tf.train.SyncReplicasOptimizer(adamOptimizer,
-                                                        replicas_to_aggregate=len(workers),
+            optimizer = tf.train.SyncReplicasOptimizer(adam_optimizer,
+                                                        replicas_to_aggregate=len(worker_hosts),
                                                         replica_id=FLAGS.task_index,
-                                                        total_num_replicas=len(workers),
+                                                        total_num_replicas=len(worker_hosts),
                                                         use_locking=True
                                                         )
 
             # create input placeholders
             with tf.name_scope("inputs"):
-                states = tf.placeholder(tf.float32, (None, self.state_dim), "states")
+                states = tf.placeholder(tf.float32, (None, state_dim), "states")
                 actions = tf.placeholder(tf.int32, (None,), "actions")
                 rewards = tf.placeholder(tf.float32, (None,), "rewards")
-                next_states = tf.placeholder(tf.float32, (None, self.state_dim), "next_states")
+                next_states = tf.placeholder(tf.float32, (None, state_dim), "next_states")
                 dones = tf.placeholder(tf.bool, (None,), "dones")
                 one_hot_actions = tf.one_hot(actions, num_actions, axis=-1)
 
