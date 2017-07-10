@@ -277,7 +277,11 @@ def main(_):
                                             next_states: random_batch['next_states'],
                                             dones: random_batch["dones"]})
 
+                    mon_sess.run(target_update)
+
                     print("curr loss is {}".format(loss_val))
+
+
 
 
 if __name__ == "__main__":
