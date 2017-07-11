@@ -43,3 +43,5 @@ RUN pip --no-cache-dir install \
 
 # TensorBoard
 EXPOSE 6006
+
+COPY dist-dqn-trainer.py /
