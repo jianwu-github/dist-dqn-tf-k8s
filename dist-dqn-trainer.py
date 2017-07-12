@@ -41,8 +41,8 @@ class Sampler(object):
                 data = next(self._csv_file_reader)
 
             states.append(np.array(map(lambda x: float(x.strip()), data["state"][1:-1].split(","))))
-            actions.append(float(data["action"].strip()))
-            rewards.append(float(data["reward"].strip()))
+            actions.append(1 if data["action"].strip() == "True" else 0)
+            rewards.append(0.0 if data["reward"].strip() == "None" else float(data["reward"].strip()))
             next_states.append(np.array(map(lambda x: float(x.strip()), data["next_state"][1:-1].split(","))))
             dones.append(data["done"].lower() == "true")
 
@@ -55,7 +55,7 @@ class Sampler(object):
 
     def collect_one_batch(self):
         episodes = []
-        for i_episode in xrange(self.num_episodes):
+        for i_episode in xrange(self._num_episodes):
             episodes.append(self.collect_one_episode())
         # prepare input
         states = np.concatenate([episode["states"] for episode in episodes])
@@ -138,7 +138,7 @@ tf.app.flags.DEFINE_string("log_path", "/tmp/train", "Log path")
 tf.app.flags.DEFINE_string("data_dir", "/data", "Data dir path")
 
 # Hyperparameters
-state_dim = 20
+state_dim = 23
 num_actions = 2
 
 discount = 0.9
@@ -149,7 +149,7 @@ sample_size = 32
 num_of_episodes_for_batch = 10
 replay_buffer_size = 10000
 
-sample_csv_file = “/dqn-training-data/dqn_training_samples.csv"
+sample_csv_file = "/dqn-training-data/dqn_training_samples.csv"
 
 def q_network(states):
     W1 = tf.get_variable("W1", [state_dim, 20],
@@ -193,11 +193,12 @@ def main(_):
                 worker_device="/job:worker/task:%d" % FLAGS.task_index,
                 cluster=cluster)):
 
+            global_step = tf.Variable(0, name='global_step', trainable=False)
+
             adam_optimizer = tf.train.AdamOptimizer(learning_rate=learning_rate)
 
             optimizer = tf.train.SyncReplicasOptimizer(adam_optimizer,
                                                         replicas_to_aggregate=len(worker_hosts),
-                                                        replica_id=FLAGS.task_index,
                                                         total_num_replicas=len(worker_hosts),
                                                         use_locking=True
                                                         )
@@ -216,7 +217,7 @@ def main(_):
                 with tf.variable_scope("q_network"):
                     q_values = q_network(states)
             with tf.name_scope("action_scores"):
-                action_scores = tf.reduce_sum(tf.mul(q_values, one_hot_actions), reduction_indices=1)
+                action_scores = tf.reduce_sum(tf.multiply(q_values, one_hot_actions), reduction_indices=1)
 
             # create variables for target-network
             with tf.name_scope("target_values"):
@@ -224,7 +225,7 @@ def main(_):
                 with tf.variable_scope("target_network"):
                     target_q_values = q_network(next_states)
                 max_target_q_values = tf.reduce_max(target_q_values, reduction_indices=1)
-                max_target_q_values = tf.mul(max_target_q_values, not_the_end_of_an_episode)
+                max_target_q_values = tf.multiply(max_target_q_values, not_the_end_of_an_episode)
                 target_values = rewards + discount * max_target_q_values
 
             # create variables for optimization
@@ -233,7 +234,7 @@ def main(_):
                 loss = tf.cond(loss <= 0.5, lambda: 0.5 * tf.pow(loss, 2), lambda: 0.5 * loss - 0.125, name="huber_loss")
                 trainable_variables = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, scope="q_network")
                 gradients = optimizer.compute_gradients(loss, var_list=trainable_variables)
-                train_op = optimizer.apply_gradients(gradients)
+                train_op = optimizer.apply_gradients(gradients, global_step)
 
             # create variables for target network update
             with tf.name_scope("target_network_update"):
