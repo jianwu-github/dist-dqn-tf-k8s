@@ -1,1 +1,1 @@
-# dist-dqn-tf-k8s
+# Distributed offline TensorFlow DQN Trainer ready to run in Kubernetes Cluster
