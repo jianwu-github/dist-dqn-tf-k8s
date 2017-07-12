@@ -45,3 +45,4 @@ RUN pip --no-cache-dir install \
 EXPOSE 6006
 
 COPY dist-dqn-trainer.py /
+COPY start-dan-training.sh /

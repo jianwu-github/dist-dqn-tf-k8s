@@ -149,7 +149,7 @@ sample_size = 32
 num_of_episodes_for_batch = 10
 replay_buffer_size = 10000
 
-sample_csv_file = "/pdisk1/dqn_training_samples.csv"
+sample_csv_file = “/dqn-training-data/dqn_training_samples.csv"
 
 def q_network(states):
     W1 = tf.get_variable("W1", [state_dim, 20],
