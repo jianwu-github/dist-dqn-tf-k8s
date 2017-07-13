@@ -9,8 +9,7 @@ import tensorflow as tf
 
 class Sampler(object):
     """
-    Sampler Class is adopted from PGQ Repository (https://github.com/abhishm/PGQ)
-    by Abhishek Mishra
+    Sampler Class is adopted from PGQ Repository(https://github.com/abhishm/PGQ) by Abhishek Mishra
     """
     def __init__(self,
                  csv_file,
@@ -74,7 +73,7 @@ class Sampler(object):
 
 class ReplayBuffer(object):
     """
-    Adopted from PGQ Repository (https://github.com/abhishm/PGQ) by Abhishek Mishra
+    ReplayBuffer is adopted from PGQ Repository(https://github.com/abhishm/PGQ) by Abhishek Mishra
     """
     def __init__(self, buffer_size):
         self.buffer_size = buffer_size
@@ -149,6 +148,8 @@ sample_size = 32
 num_of_episodes_for_batch = 10
 replay_buffer_size = 10000
 
+synchronized_training = True
+
 sample_csv_file = "/dqn-training-data/dqn_training_samples.csv"
 
 def q_network(states):
@@ -189,6 +190,7 @@ def main(_):
         server.join()
     elif FLAGS.job_name == "worker":
         is_chief = FLAGS.task_index == 0
+        checkpointDir = "/dqn-training-data/train_logs/worker-" + str(FLAGS.task_index)
 
         with tf.device(tf.train.replica_device_setter(
                 worker_device="/job:worker/task:%d" % FLAGS.task_index,
@@ -198,11 +200,16 @@ def main(_):
 
             adam_optimizer = tf.train.AdamOptimizer(learning_rate=learning_rate)
 
-            optimizer = tf.train.SyncReplicasOptimizer(adam_optimizer,
-                                                       replicas_to_aggregate=len(worker_hosts),
-                                                       total_num_replicas=len(worker_hosts) #, use_locking=True
-                                                       )
-            # optimizer = adam_optimizer
+            if synchronized_training:
+                # synchronized training across multiple workers
+                optimizer = tf.train.SyncReplicasOptimizer(adam_optimizer,
+                                                           replicas_to_aggregate=len(worker_hosts),
+                                                           total_num_replicas=len(worker_hosts),
+                                                           use_locking=True
+                                                           )
+            else:
+                # or no synchronized training
+                optimizer = adam_optimizer
 
             # create input placeholders
             with tf.name_scope("inputs"):
@@ -248,16 +255,21 @@ def main(_):
                 target_update = tf.group(*target_ops)
 
             # The StopAtStepHook handles stopping after running given steps.
-            # hooks = [tf.train.StopAtStepHook(last_step=1000)]
-            sync_replica_hook = optimizer.make_session_run_hook(is_chief)
+            session_hooks = [tf.train.StopAtStepHook(last_step=100)]
+
+            # Create the hook which handles initialization and queues.
+            if synchronized_training:
+                make_session_hook = optimizer.make_session_run_hook(is_chief)
+                session_hooks.append(make_session_hook)
+                session_hooks.reverse()
 
             # The MonitoredTrainingSession takes care of session initialization,
             # restoring from a checkpoint, saving to a checkpoint, and closing when done
             # or an error occurs.
             with tf.train.MonitoredTrainingSession(master=server.target,
                                                    is_chief=(FLAGS.task_index == 0),
-                                                   checkpoint_dir="/dqn-training-data/train_logs",
-                                                   hooks=[sync_replica_hook] 
+                                                   checkpoint_dir=checkpointDir,
+                                                   hooks=session_hooks
                                                    ) as mon_sess:
 
                 # Sampler (collect trajectories recorded in sample_csv_file)
@@ -266,29 +278,28 @@ def main(_):
                 # Initializing ReplayBuffer
                 replay_buffer = ReplayBuffer(replay_buffer_size)
 
-                # while not mon_sess.should_stop():
-		for i in xrange(1000):
-		    print("Entering step {} ...".format(i))		
+                i = 0
+                while not mon_sess.should_stop():
+                    print("Entering step {} ...".format(i))
                     batch = sampler.collect_one_batch()
                     replay_buffer.add_batch(batch)
 
                     random_batch = replay_buffer.sample_batch(sample_size)  # replay buffer
 
                     # mon_sess.run handles AbortedError in case of preempted PS.
-                    loss_val, _ = mon_sess.run(
-                                            [loss, train_op],
-                                            {states: random_batch["states"],
-                                            actions: random_batch["actions"],
-                                            rewards: random_batch["rewards"],
-                                            next_states: random_batch['next_states'],
-                                            dones: random_batch["dones"]})
+                    gs_val, loss_val, _ = mon_sess.run([global_step, loss, train_op],
+                                                        {states: random_batch["states"],
+                                                        actions: random_batch["actions"],
+                                                        rewards: random_batch["rewards"],
+                                                        next_states: random_batch['next_states'],
+                                                        dones: random_batch["dones"]})
 
                     mon_sess.run(target_update)
 
-                    print("The loss at step {} is {}".format(i, loss_val))
-                
-                mon_sess.stop() 
+                    print("The loss and global step at worker {} local step {} is {} and {}".format(FLAGS.task_index, i, loss_val, gs_val))
+                    i += 1
 
+            print("Training on Worker {} has finished!".format(FLAGS.task_index))
 
 if __name__ == "__main__":
     tf.app.run()
