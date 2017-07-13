@@ -188,6 +188,7 @@ def main(_):
     if FLAGS.job_name == "ps":
         server.join()
     elif FLAGS.job_name == "worker":
+        is_chief = FLAGS.task_index == 0
 
         with tf.device(tf.train.replica_device_setter(
                 worker_device="/job:worker/task:%d" % FLAGS.task_index,
@@ -198,10 +199,10 @@ def main(_):
             adam_optimizer = tf.train.AdamOptimizer(learning_rate=learning_rate)
 
             optimizer = tf.train.SyncReplicasOptimizer(adam_optimizer,
-                                                        replicas_to_aggregate=len(worker_hosts),
-                                                        total_num_replicas=len(worker_hosts),
-                                                        use_locking=True
-                                                        )
+                                                       replicas_to_aggregate=len(worker_hosts),
+                                                       total_num_replicas=len(worker_hosts) #, use_locking=True
+                                                       )
+            # optimizer = adam_optimizer
 
             # create input placeholders
             with tf.name_scope("inputs"):
@@ -247,15 +248,17 @@ def main(_):
                 target_update = tf.group(*target_ops)
 
             # The StopAtStepHook handles stopping after running given steps.
-            hooks = [tf.train.StopAtStepHook(last_step=1000)]
+            # hooks = [tf.train.StopAtStepHook(last_step=1000)]
+            sync_replica_hook = optimizer.make_session_run_hook(is_chief)
 
             # The MonitoredTrainingSession takes care of session initialization,
             # restoring from a checkpoint, saving to a checkpoint, and closing when done
             # or an error occurs.
             with tf.train.MonitoredTrainingSession(master=server.target,
                                                    is_chief=(FLAGS.task_index == 0),
-                                                   checkpoint_dir="/tmp/train_logs",
-                                                   hooks=hooks) as mon_sess:
+                                                   checkpoint_dir="/dqn-training-data/train_logs",
+                                                   hooks=[sync_replica_hook] 
+                                                   ) as mon_sess:
 
                 # Sampler (collect trajectories recorded in sample_csv_file)
                 sampler = Sampler(sample_csv_file, num_of_episodes_for_batch, sample_size)
@@ -263,7 +266,9 @@ def main(_):
                 # Initializing ReplayBuffer
                 replay_buffer = ReplayBuffer(replay_buffer_size)
 
-                while not mon_sess.should_stop():
+                # while not mon_sess.should_stop():
+		for i in xrange(1000):
+		    print("Entering step {} ...".format(i))		
                     batch = sampler.collect_one_batch()
                     replay_buffer.add_batch(batch)
 
@@ -280,9 +285,9 @@ def main(_):
 
                     mon_sess.run(target_update)
 
-                    print("curr loss is {}".format(loss_val))
-
-
+                    print("The loss at step {} is {}".format(i, loss_val))
+                
+                mon_sess.stop() 
 
 
 if __name__ == "__main__":
