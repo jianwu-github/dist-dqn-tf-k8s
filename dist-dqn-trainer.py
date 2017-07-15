@@ -205,16 +205,17 @@ def main(_):
 
         is_chief = task_index == 0
 
-        # checkpoint_dir = "/dqn-training-data/train_logs/worker-" + str(task_index)
-        #
-        # if os.path.exists(checkpoint_dir):
-        #     shutil.rmtree(checkpoint_dir)
-        #     print("Delete old checkpoint data under {}".format(checkpoint_dir))
-        checkpoint_dir = "/tmp/dqn_train_logs/worker-" + str(task_index)
+        checkpoint_dir = "/dqn-training-data/train_logs/worker-" + str(task_index)
         print("Set checkpoint directory to {}".format(checkpoint_dir))
+
         if os.path.exists(checkpoint_dir):
             shutil.rmtree(checkpoint_dir)
             print("Delete old checkpoint data under {}".format(checkpoint_dir))
+        # checkpoint_dir = "/tmp/dqn_train_logs/worker-" + str(task_index)
+        # print("Set checkpoint directory to {}".format(checkpoint_dir))
+        # if os.path.exists(checkpoint_dir):
+        #     shutil.rmtree(checkpoint_dir)
+        #     print("Delete old checkpoint data under {}".format(checkpoint_dir))
 
 
         with tf.device(tf.train.replica_device_setter(
