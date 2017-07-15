@@ -1,5 +1,8 @@
 import csv
+import os.path
 import random
+import shutil
+import time
 
 from collections import deque
 
@@ -189,10 +192,30 @@ def main(_):
                              task_index=task_index)
 
     if FLAGS.job_name == "ps":
+        print("Parameter Server is started and ready ...")
         server.join()
+
     elif FLAGS.job_name == "worker":
+        # checking whether sample data file exists and start worker only after
+        # the sample data file is available to process
+        while not os.path.exists(sample_csv_file):
+            time.sleep(1)
+        else:
+            print("Found sample data {}, starting tensorflow worker {} now ...".format(sample_csv_file, task_index))
+
         is_chief = task_index == 0
-        checkpointDir = "/dqn-training-data/train_logs/worker-" + str(task_index)
+
+        # checkpoint_dir = "/dqn-training-data/train_logs/worker-" + str(task_index)
+        #
+        # if os.path.exists(checkpoint_dir):
+        #     shutil.rmtree(checkpoint_dir)
+        #     print("Delete old checkpoint data under {}".format(checkpoint_dir))
+        checkpoint_dir = "/tmp/dqn_train_logs/worker-" + str(task_index)
+        print("Set checkpoint directory to {}".format(checkpoint_dir))
+        if os.path.exists(checkpoint_dir):
+            shutil.rmtree(checkpoint_dir)
+            print("Delete old checkpoint data under {}".format(checkpoint_dir))
+
 
         with tf.device(tf.train.replica_device_setter(
                 worker_device="/job:worker/task:%d" % task_index,
@@ -270,7 +293,7 @@ def main(_):
             # or an error occurs.
             with tf.train.MonitoredTrainingSession(master=server.target,
                                                    is_chief=(task_index == 0),
-                                                   checkpoint_dir=checkpointDir,
+                                                   checkpoint_dir=checkpoint_dir,
                                                    hooks=session_hooks
                                                    ) as mon_sess:
 
