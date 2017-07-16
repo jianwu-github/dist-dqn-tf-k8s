@@ -49,4 +49,4 @@ COPY start-dqn-training.sh /
 
 WORKDIR /
 
-CMD ./start-dqn-training.sh --ps_hosts=${PS_HOSTS} --worker_hosts=${WORKER_HOSTS} --job_name=${JOB_NAME} --task_index=${TASK_INDEX}
+CMD ./start-dqn-training.sh --ps_hosts=${PS_HOSTS} --worker_hosts=${WORKER_HOSTS} --job_name=${JOB_NAME} --task_index=${TASK_INDEX} --sync_flag=${SYNC_FLAG}

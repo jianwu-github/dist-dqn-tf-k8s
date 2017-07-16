@@ -138,6 +138,7 @@ tf.app.flags.DEFINE_string("job_name", "", "One of 'ps', 'worker'")
 tf.app.flags.DEFINE_string("task_index", "0", "Index of task within the job")
 tf.app.flags.DEFINE_string("log_path", "/tmp/train", "Log path")
 tf.app.flags.DEFINE_string("data_dir", "/data", "Data dir path")
+tf.app.flags.DEFINE_boolean("sync_flag", "true", "synchronized training")
 
 # Hyperparameters
 state_dim = 23
@@ -150,8 +151,6 @@ target_update_rate = 0.5
 sample_size = 32
 num_of_episodes_for_batch = 10
 replay_buffer_size = 10000
-
-synchronized_training = True
 
 sample_csv_file = "/dqn-training-data/dqn_training_samples.csv"
 
@@ -185,6 +184,8 @@ def main(_):
     ps_hosts = FLAGS.ps_hosts.split(",")
     worker_hosts = FLAGS.worker_hosts.split(",")
     task_index = int(FLAGS.task_index)
+
+    synchronized_training = FLAGS.sync_flag
 
     cluster = tf.train.ClusterSpec({"ps": ps_hosts, "worker": worker_hosts})
     server = tf.train.Server(cluster,
@@ -231,7 +232,7 @@ def main(_):
                 optimizer = tf.train.SyncReplicasOptimizer(adam_optimizer,
                                                            replicas_to_aggregate=len(worker_hosts),
                                                            total_num_replicas=len(worker_hosts),
-                                                           use_locking=True
+                                                           use_locking=synchronized_training
                                                            )
             else:
                 # or no synchronized training
