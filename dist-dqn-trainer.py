@@ -139,6 +139,7 @@ tf.app.flags.DEFINE_string("task_index", "0", "Index of task within the job")
 tf.app.flags.DEFINE_string("log_path", "/tmp/train", "Log path")
 tf.app.flags.DEFINE_string("data_dir", "/data", "Data dir path")
 tf.app.flags.DEFINE_boolean("sync_flag", "true", "synchronized training")
+tf.app.flags.DEFINE_string("init_wait", "10", "worker initial wait for sync sessions")
 
 # Hyperparameters
 state_dim = 23
@@ -184,6 +185,7 @@ def main(_):
     ps_hosts = FLAGS.ps_hosts.split(",")
     worker_hosts = FLAGS.worker_hosts.split(",")
     task_index = int(FLAGS.task_index)
+    init_wait = int(FLAGS.init_wait)
 
     synchronized_training = FLAGS.sync_flag
 
@@ -210,8 +212,10 @@ def main(_):
         print("Set checkpoint directory to {}".format(checkpoint_dir))
 
         if os.path.exists(checkpoint_dir):
+            print("Found the previous checkpoint directory, worker crashed...???")
             shutil.rmtree(checkpoint_dir)
             print("Delete old checkpoint data under {}".format(checkpoint_dir))
+
         # checkpoint_dir = "/tmp/dqn_train_logs/worker-" + str(task_index)
         # print("Set checkpoint directory to {}".format(checkpoint_dir))
         # if os.path.exists(checkpoint_dir):
@@ -282,7 +286,7 @@ def main(_):
                 target_update = tf.group(*target_ops)
 
             # The StopAtStepHook handles stopping after running given steps.
-            session_hooks = [tf.train.StopAtStepHook(last_step=100)]
+            session_hooks = [tf.train.StopAtStepHook(last_step=500)]
 
             # Create the hook which handles initialization and queues.
             if synchronized_training:
@@ -296,8 +300,15 @@ def main(_):
             with tf.train.MonitoredTrainingSession(master=server.target,
                                                    is_chief=(task_index == 0),
                                                    checkpoint_dir=checkpoint_dir,
+                                                   save_summaries_steps=None,
+                                                   save_summaries_secs=None,
                                                    hooks=session_hooks
                                                    ) as mon_sess:
+
+                # wait for workers to sync sessions
+                print("Wait for {} seconds for workers to sync sessions ...".format(init_wait))
+                time.sleep(init_wait)
+
 
                 # Sampler (collect trajectories recorded in sample_csv_file)
                 sampler = Sampler(sample_csv_file, num_of_episodes_for_batch, sample_size)
@@ -326,7 +337,8 @@ def main(_):
                     print("The loss and global step at worker {} local step {} is {} and {}".format(task_index, i, loss_val, gs_val))
                     i += 1
 
-            print("Training on Worker {} has finished!".format(task_index))
+            print("Training on Worker {} has finished, waiting 5 minutes to be stopped ...".format(task_index))
+            time.sleep(300)
 
 if __name__ == "__main__":
     tf.app.run()
