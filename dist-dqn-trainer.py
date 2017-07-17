@@ -286,13 +286,13 @@ def main(_):
                 target_update = tf.group(*target_ops)
 
             # The StopAtStepHook handles stopping after running given steps.
-            session_hooks = [tf.train.StopAtStepHook(last_step=500)]
+            # session_hooks = [tf.train.StopAtStepHook(last_step=500)]
+            session_hooks = None
 
             # Create the hook which handles initialization and queues.
             if synchronized_training:
                 make_session_hook = optimizer.make_session_run_hook(is_chief)
-                session_hooks.append(make_session_hook)
-                session_hooks.reverse()
+                session_hooks =[make_session_hook]
 
             # The MonitoredTrainingSession takes care of session initialization,
             # restoring from a checkpoint, saving to a checkpoint, and closing when done
@@ -316,9 +316,12 @@ def main(_):
                 # Initializing ReplayBuffer
                 replay_buffer = ReplayBuffer(replay_buffer_size)
 
-                i = 0
-                while not mon_sess.should_stop():
-                    print("Entering step {} ...".format(i))
+                # 500 local training steps
+                for i in xrange(500):
+                    if i > 0 and i % 25 == 0:
+                        time.sleep(1)
+                        
+                    print("Entering local step {} ...".format(i))
                     batch = sampler.collect_one_batch()
                     replay_buffer.add_batch(batch)
 
@@ -337,8 +340,14 @@ def main(_):
                     print("The loss and global step at worker {} local step {} is {} and {}".format(task_index, i, loss_val, gs_val))
                     i += 1
 
-            print("Training on Worker {} has finished, waiting 5 minutes to be stopped ...".format(task_index))
-            time.sleep(300)
+                for j in xrange(60):
+                    time.sleep(60)
+                    # print("Session should_stop: {}".format(mon_sess.should_stop()))
+                    print("Training on Worker {} has finished, waiting {} minutes to be stopped ...".format(task_index, (60 - j)))
+
+
+            print("Worker {} is stopping now!".format(task_index))
+
 
 if __name__ == "__main__":
     tf.app.run()
