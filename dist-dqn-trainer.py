@@ -206,6 +206,12 @@ def main(_):
         else:
             print("Found sample data {}, starting tensorflow worker {} now ...".format(sample_csv_file, task_index))
 
+        # Sampler (collect trajectories recorded in sample_csv_file)
+        sampler = Sampler(sample_csv_file, num_of_episodes_for_batch, sample_size)
+
+        # Initializing ReplayBuffer
+        replay_buffer = ReplayBuffer(replay_buffer_size)
+
         is_chief = task_index == 0
 
         checkpoint_dir = "/dqn-training-data/train_logs/worker-" + str(task_index)
@@ -222,7 +228,6 @@ def main(_):
         #     shutil.rmtree(checkpoint_dir)
         #     print("Delete old checkpoint data under {}".format(checkpoint_dir))
 
-
         with tf.device(tf.train.replica_device_setter(
                 worker_device="/job:worker/task:%d" % task_index,
                 cluster=cluster)):
@@ -236,7 +241,7 @@ def main(_):
                 optimizer = tf.train.SyncReplicasOptimizer(adam_optimizer,
                                                            replicas_to_aggregate=len(worker_hosts),
                                                            total_num_replicas=len(worker_hosts),
-                                                           use_locking=synchronized_training
+                                                           use_locking=False
                                                            )
             else:
                 # or no synchronized training
@@ -306,20 +311,16 @@ def main(_):
                                                    ) as mon_sess:
 
                 # wait for workers to sync sessions
-                print("Wait for {} seconds for workers to sync sessions ...".format(init_wait))
-                time.sleep(init_wait)
+                if init_wait >= 1:
+                    time.sleep(init_wait)
+                    print("Wait for {} seconds for workers to sync sessions ...".format(init_wait))
+                else:
+                    print("Start worker session without delay...")
 
-
-                # Sampler (collect trajectories recorded in sample_csv_file)
-                sampler = Sampler(sample_csv_file, num_of_episodes_for_batch, sample_size)
-
-                # Initializing ReplayBuffer
-                replay_buffer = ReplayBuffer(replay_buffer_size)
-
-                # 500 local training steps
-                for i in xrange(500):
-                    if i > 0 and i % 25 == 0:
-                        time.sleep(1)
+                # 450 local training steps
+                for i in xrange(450):
+                    # if i > 0 and i % 25 == 0:
+                    #     time.sleep(1)
                         
                     print("Entering local step {} ...".format(i))
                     batch = sampler.collect_one_batch()
@@ -337,12 +338,12 @@ def main(_):
 
                     mon_sess.run(target_update)
 
-                    print("The loss and global step at worker {} local step {} is {} and {}".format(task_index, i, loss_val, gs_val))
+                    timestamp = int(time.time())
+                    print("At timestamp: {}, the loss and global step at worker {} local step {} is {} and {}".format(timestamp, task_index, i, loss_val, gs_val))
                     i += 1
 
                 for j in xrange(60):
                     time.sleep(60)
-                    # print("Session should_stop: {}".format(mon_sess.should_stop()))
                     print("Training on Worker {} has finished, waiting {} minutes to be stopped ...".format(task_index, (60 - j)))
 
 
