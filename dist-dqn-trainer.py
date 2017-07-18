@@ -10,9 +10,9 @@ import numpy as np
 
 import tensorflow as tf
 
-class Sampler(object):
+class FileSampler(object):
     """
-    Sampler Class is adopted from PGQ Repository(https://github.com/abhishm/PGQ) by Abhishek Mishra
+    FileSampler Class is adopted from Sampler class in PGQ Repository(https://github.com/abhishm/PGQ) by Abhishek Mishra
     """
     def __init__(self,
                  csv_file,
@@ -73,6 +73,95 @@ class Sampler(object):
                     dones=dones
                 )
 
+class DirSampler(object):
+    """
+    DirSampler Class is adopted from Sampler class in PGQ Repository(https://github.com/abhishm/PGQ) by Abhishek Mishra
+    """
+    def __init__(self,
+                 csv_data_dir,
+                 num_episodes=10,
+                 max_step=20):
+        self._num_episodes = num_episodes
+        self._max_step = max_step
+        self._csv_data_dir = csv_data_dir
+
+        self._field_names = ("state", "action", "reward", "next_state", "done")
+
+        csv_data_files = [f for f in os.listdir(self._csv_data_dir)
+                          if os.path.isfile(os.path.join(self._csv_data_dir, f))]
+        nonempty_csv_data_files = [f for f in csv_data_files
+                                   if os.path.getsize(os.path.join(self._csv_data_dir, f)) > 0]
+
+        self._csv_data_files = nonempty_csv_data_files
+        self._num_of_csv_files = len(self._csv_data_files)
+        print("The list of files to be read: {}".format(str(self._csv_data_files)))
+
+        self._csv_file_index = -1
+        self._csv_file = None
+        self._csv_file_reader = None
+
+    def _get_csv_file_reader(self, field_names, csv_file):
+        with open(csv_file, 'rU') as data:
+            reader = csv.DictReader(data, fieldnames=field_names)
+            for row in reader:
+                yield row
+
+    def collect_one_episode(self):
+        if self._csv_file_index < 0 or self._csv_file_reader is None:
+            self._csv_file_index = 0
+            self._csv_file = os.path.join(self._csv_data_dir, self._csv_data_files[self._csv_file_index])
+            self._csv_file_reader = self._get_csv_file_reader(self._field_names, self._csv_file)
+
+        states, actions, rewards, next_states, dones = [], [], [], [], []
+
+        for t in xrange(self._max_step):
+            try:
+                data = next(self._csv_file_reader)
+            except StopIteration:
+                if self._csv_file_index < self._num_of_csv_files - 1:
+                    self._csv_file_index += 1
+                    self._csv_file = os.path.join(self._csv_data_dir, self._csv_data_files[self._csv_file_index])
+                    self._csv_file_reader = self._get_csv_file_reader(self._field_names, self._csv_file)
+
+                    data = next(self._csv_file_reader)
+                else:
+                    print("Fetched all the files under {}, start again from the first file ...".format(self._csv_data_dir))
+                    self._csv_file_index = 0
+                    self._csv_file = os.path.join(self._csv_data_dir, self._csv_data_files[self._csv_file_index])
+                    self._csv_file_reader = self._get_csv_file_reader(self._field_names, self._csv_file)
+
+                    data = next(self._csv_file_reader)
+
+            states.append(np.array(map(lambda x: float(x.strip()), data["state"][1:-1].split(","))))
+            actions.append(1 if data["action"].strip() == "True" else 0)
+            rewards.append(0.0 if data["reward"].strip() == "None" else float(data["reward"].strip()))
+            next_states.append(np.array(map(lambda x: float(x.strip()), data["next_state"][1:-1].split(","))))
+            dones.append(data["done"].lower() == "true")
+
+        return dict(states=states,
+                    actions=actions,
+                    rewards=rewards,
+                    next_states=next_states,
+                    dones=dones
+                )
+
+    def collect_one_batch(self):
+        episodes = []
+        for i_episode in xrange(self._num_episodes):
+            episodes.append(self.collect_one_episode())
+        # prepare input
+        states = np.concatenate([episode["states"] for episode in episodes])
+        actions = np.concatenate([episode["actions"] for episode in episodes])
+        rewards = np.concatenate([episode["rewards"] for episode in episodes])
+        next_states = np.concatenate([episode["next_states"] for episode in episodes])
+        dones = np.concatenate([episode["dones"] for episode in episodes])
+
+        return dict(states=states,
+                    actions=actions,
+                    rewards=rewards,
+                    next_states=next_states,
+                    dones=dones
+                )
 
 class ReplayBuffer(object):
     """
@@ -154,6 +243,9 @@ num_of_episodes_for_batch = 10
 replay_buffer_size = 10000
 
 sample_csv_file = "/dqn-training-data/dqn_training_samples.csv"
+sample_csv_data_dir = "/dqn-training-data/csv-data-dir"
+
+read_from_dir = True
 
 def q_network(states):
     W1 = tf.get_variable("W1", [state_dim, 20],
@@ -199,15 +291,28 @@ def main(_):
         server.join()
 
     elif FLAGS.job_name == "worker":
-        # checking whether sample data file exists and start worker only after
-        # the sample data file is available to process
-        while not os.path.exists(sample_csv_file):
-            time.sleep(1)
-        else:
-            print("Found sample data {}, starting tensorflow worker {} now ...".format(sample_csv_file, task_index))
+        if read_from_dir:
+            # checking whether sample data directory exists and whether it has csv data file(s),
+            # start worker only after the csv data file is available under directory to process
+            while (not os.path.exists(sample_csv_data_dir)) or \
+                    (os.path.isdir(sample_csv_data_dir) and len(os.listdir(sample_csv_data_dir)) == 0):
+                time.sleep(1)
+            else:
+                print("Found data file in {}, starting tensorflow worker {} now ...".format(sample_csv_data_dir, task_index))
 
-        # Sampler (collect trajectories recorded in sample_csv_file)
-        sampler = Sampler(sample_csv_file, num_of_episodes_for_batch, sample_size)
+            # Sampler (collect trajectories recorded in sample_csv_file)
+            # sampler = FileSampler(sample_csv_file, num_of_episodes_for_batch, sample_size)
+            sampler = DirSampler(sample_csv_data_dir, num_of_episodes_for_batch, sample_size)
+        else:
+            # checking whether sample data file exists and start worker only after
+            # the sample data file is available to process
+            while not os.path.exists(sample_csv_file):
+                time.sleep(1)
+            else:
+                print("Found sample data {}, starting tensorflow worker {} now ...".format(sample_csv_file, task_index))
+
+            # Sampler (collect trajectories recorded in sample_csv_file)
+            sampler = FileSampler(sample_csv_file, num_of_episodes_for_batch, sample_size)
 
         # Initializing ReplayBuffer
         replay_buffer = ReplayBuffer(replay_buffer_size)
