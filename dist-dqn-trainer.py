@@ -12,7 +12,7 @@ import tensorflow as tf
 
 class FileSampler(object):
     """
-    FileSampler Class is adopted from Sampler class in PGQ Repository(https://github.com/abhishm/PGQ) by Abhishek Mishra
+    FileSampler Class is adopted from Sampler class in DQN Repository(https://github.com/abhishm/dqn) by Abhishek Mishra
     """
     def __init__(self,
                  csv_file,
@@ -75,7 +75,7 @@ class FileSampler(object):
 
 class DirSampler(object):
     """
-    DirSampler Class is adopted from Sampler class in PGQ Repository(https://github.com/abhishm/PGQ) by Abhishek Mishra
+    DirSampler Class is adopted from Sampler class in DQN Repository(https://github.com/abhishm/dqn) by Abhishek Mishra
     """
     def __init__(self,
                  csv_data_dir,
@@ -165,7 +165,7 @@ class DirSampler(object):
 
 class ReplayBuffer(object):
     """
-    ReplayBuffer is adopted from PGQ Repository(https://github.com/abhishm/PGQ) by Abhishek Mishra
+    ReplayBuffer is adopted from DQN Repository(https://github.com/abhishm/dqn) by Abhishek Mishra
     """
     def __init__(self, buffer_size):
         self.buffer_size = buffer_size
@@ -296,9 +296,11 @@ def main(_):
             # start worker only after the csv data file is available under directory to process
             while (not os.path.exists(sample_csv_data_dir)) or \
                     (os.path.isdir(sample_csv_data_dir) and len(os.listdir(sample_csv_data_dir)) == 0):
-                time.sleep(1)
+                time.sleep(3)
             else:
-                print("Found data file in {}, starting tensorflow worker {} now ...".format(sample_csv_data_dir, task_index))
+                print("Found data file in {}, wait for another 10 seconds before starting tensorflow worker {} now ...".format(sample_csv_data_dir, task_index))
+
+            time.sleep(10)
 
             # Sampler (collect trajectories recorded in sample_csv_file)
             # sampler = FileSampler(sample_csv_file, num_of_episodes_for_batch, sample_size)
@@ -309,7 +311,9 @@ def main(_):
             while not os.path.exists(sample_csv_file):
                 time.sleep(1)
             else:
-                print("Found sample data {}, starting tensorflow worker {} now ...".format(sample_csv_file, task_index))
+                print("Found sample data {}, wait for another 10 seconds before starting tensorflow worker {} now ...".format(sample_csv_file, task_index))
+
+            time.sleep(10)
 
             # Sampler (collect trajectories recorded in sample_csv_file)
             sampler = FileSampler(sample_csv_file, num_of_episodes_for_batch, sample_size)
