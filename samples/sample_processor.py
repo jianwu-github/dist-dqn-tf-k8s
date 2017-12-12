@@ -7,6 +7,17 @@ from datetime import datetime
 
 DEFAULT_MAILING_COST = 0.68
 
+DEFAULT_NONE_VALUE = 0.0
+
+
+def to_float(val):
+    try:
+        float_val = float(val)
+    except ValueError:
+        float_val = DEFAULT_NONE_VALUE
+
+    return float_val
+
 
 def process_sample_data(input_csv_file, output_csv_file):
     """
@@ -41,8 +52,20 @@ def process_sample_data(input_csv_file, output_csv_file):
         csv_reader = csv.DictReader(input_csv)
 
         # read and process each row
+        row_num = 0
+        for row in csv_reader:
+            age = to_float(row['AGE'])
+            income = to_float(row['INCOME'])
 
-        # write out the training data file
+            # extract the last 16 campaign data for training
+
+
+            # write out the training data file
+
+            row_num += 1
+
+
+
 
 
 
