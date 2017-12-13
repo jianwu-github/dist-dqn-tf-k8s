@@ -9,6 +9,8 @@ DEFAULT_MAILING_COST = 0.68
 
 DEFAULT_NONE_VALUE = 0.0
 
+EPOCH_TIME = datetime.utcfromtimestamp(0)
+
 
 def to_float(val):
     try:
@@ -17,6 +19,18 @@ def to_float(val):
         float_val = DEFAULT_NONE_VALUE
 
     return float_val
+
+
+def to_milliseconds(time_delta):
+    return time_delta.days * 86400000 + time_delta.seconds * 1000 + time_delta.microseconds / 1000
+
+
+def campaign_date_to_epoch(campaign_date):
+    curr_campaign_date = datetime(year=1900 + int(campaign_date // 100),
+                                  month=int(campaign_date % 100),
+                                  day=1)
+
+    return to_milliseconds(curr_campaign_date - EPOCH_TIME)
 
 
 def process_sample_data(input_csv_file, output_csv_file):
@@ -48,6 +62,27 @@ def process_sample_data(input_csv_file, output_csv_file):
     Recorded Action:
     action:               whether mailed in current promotion
     """
+    campaign_list = [18, 17, 16, 15, 14, 13, 12, 11, 10, 9, 8, 7, 6, 5, 4, 3]
+
+    campaign_dates = {
+        3:  9606,
+        4:  9604,
+        5:  9604,
+        6:  9603,
+        7:  9602,
+        8:  9601,
+        9:  9511,
+        10: 9510,
+        11: 9510,
+        12: 9508,
+        13: 9507,
+        14: 9506,
+        15: 9504,
+        16: 9503,
+        17: 9502,
+        18: 9501
+    }
+
     with open(input_csv_file, 'r') as input_csv:
         csv_reader = csv.DictReader(input_csv)
 
@@ -58,6 +93,24 @@ def process_sample_data(input_csv_file, output_csv_file):
             income = to_float(row['INCOME'])
 
             # extract the last 16 campaign data for training
+            campaign_states = []
+
+            # 1st campaign
+            campaign_id = campaign_list[0]
+            campaign_date = row['ADATE_' + str(campaign_id)]
+            campaign_date = campaign_dates.get(campaign_id) if campaign_date is None else campaign_date
+            campaign_timestamp = campaign_date_to_epoch(campaign_date)
+
+            
+
+
+            campaign_state = {
+                'id':       row_num,
+                'age':      age,
+                'income':   income
+            }
+
+
 
 
             # write out the training data file
