@@ -1,6 +1,4 @@
-import argparse
 import csv
-import os
 import sys
 
 from datetime import datetime
@@ -25,12 +23,60 @@ def to_milliseconds(time_delta):
     return time_delta.days * 86400000 + time_delta.seconds * 1000 + time_delta.microseconds / 1000
 
 
-def campaign_date_to_epoch(campaign_date):
-    curr_campaign_date = datetime(year=1900 + int(campaign_date // 100),
-                                  month=int(campaign_date % 100),
-                                  day=1)
+def months_between(date1, date2):
+    if date1 > date2:
+        date1, date2 = date2, date1
 
-    return to_milliseconds(curr_campaign_date - EPOCH_TIME)
+    m1 = date1.year * 12 + date1.month
+    m2 = date2.year * 12 + date2.month
+    months = m2 - m1
+
+    if date1.day > date2.day:
+        months -= 1
+    elif date1.day == date2.day:
+        seconds1 = date1.hour * 3600 + date1.minute + date1.second
+        seconds2 = date2.hour * 3600 + date2.minute + date2.second
+
+        if seconds1 > seconds2:
+            months -= 1
+
+    return months
+
+
+_campaign_list = [18, 17, 16, 15, 14, 13, 12, 11, 10, 9, 8, 7, 6, 5, 4, 3]
+
+_campaign_dates = {
+    3:  9606,
+    4:  9604,
+    5:  9604,
+    6:  9603,
+    7:  9602,
+    8:  9601,
+    9:  9511,
+    10: 9510,
+    11: 9510,
+    12: 9508,
+    13: 9507,
+    14: 9506,
+    15: 9504,
+    16: 9503,
+    17: 9502,
+    18: 9501
+}
+
+
+def _get_prev_campaign_ids(curr_campaign_id):
+    return list(range(curr_campaign_id + 1, 25))
+
+
+def campaign_date_to_date(campaign_date):
+    return datetime(year=1900 + int(campaign_date // 100),
+                    month=int(campaign_date % 100),
+                    day=1)
+
+
+def campaign_date_to_epoch(campaign_date):
+    return to_milliseconds(campaign_date_to_date(campaign_date) - EPOCH_TIME)
 
 
 def process_sample_data(input_csv_file, output_csv_file):
@@ -62,26 +108,6 @@ def process_sample_data(input_csv_file, output_csv_file):
     Recorded Action:
     action:               whether mailed in current promotion
     """
-    campaign_list = [18, 17, 16, 15, 14, 13, 12, 11, 10, 9, 8, 7, 6, 5, 4, 3]
-
-    campaign_dates = {
-        3:  9606,
-        4:  9604,
-        5:  9604,
-        6:  9603,
-        7:  9602,
-        8:  9601,
-        9:  9511,
-        10: 9510,
-        11: 9510,
-        12: 9508,
-        13: 9507,
-        14: 9506,
-        15: 9504,
-        16: 9503,
-        17: 9502,
-        18: 9501
-    }
 
     with open(input_csv_file, 'r') as input_csv:
         csv_reader = csv.DictReader(input_csv)
@@ -95,22 +121,39 @@ def process_sample_data(input_csv_file, output_csv_file):
             # extract the last 16 campaign data for training
             campaign_states = []
 
-            # 1st campaign
-            campaign_id = campaign_list[0]
-            campaign_date = row['ADATE_' + str(campaign_id)]
-            campaign_date = campaign_dates.get(campaign_id) if campaign_date is None else campaign_date
-            campaign_timestamp = campaign_date_to_epoch(campaign_date)
+            for campaign_id in _campaign_list:
+                campaign_date = row['ADATE_' + str(campaign_id)]
+                campaign_date = _campaign_dates.get(campaign_id) if campaign_date is None else campaign_date
+                campaign_timestamp = campaign_date_to_epoch(campaign_date)
 
-            
+                prev_campaign_ids = _get_prev_campaign_ids(campaign_id)
+
+                ngiftall = sum([row['RDATE_' + str(x)] is not None and row['RDATE_' + str(x)] > 0 for x in prev_campaign_ids])
+                numprom = sum([row['ADATE_' + str(x)] is not None and row['ADATE_' + str(x)] > 0 for x in prev_campaign_ids])
+                frequency = float(ngiftall) / numprom
+
+                recency = 0
+                lastgift = 0
+                if ngiftall > 0:
+                    for prev_campaign_id in prev_campaign_ids:
+                        if row['RDATE_' + str(prev_campaign_id)] is not None and row['RDATE_' + str(prev_campaign_id)] > 0:
+                            last_id = id
+                            break
+
+                    last_gift_date = row['RDATE_' + str(last_id)]
+                    last_gift_cal_date = campaign_date_to_date(last_gift_date)
+                    campaign_cal_date = campaign_date_to_date(campaign_date)
+
+                    recency = months_between(campaign_cal_date, last_gift_cal_date)
+                    lastgift = to_float(row['RAMNT_' + str(last_id)])
 
 
-            campaign_state = {
-                'id':       row_num,
-                'age':      age,
-                'income':   income
-            }
-
-
+                campaign_state = {
+                    'id':         row_num,
+                    'age':        age,
+                    'income':     income,
+                    'ngiftall':   ngiftall
+                }
 
 
             # write out the training data file
@@ -118,13 +161,9 @@ def process_sample_data(input_csv_file, output_csv_file):
             row_num += 1
 
 
-
-
-
-
-
 def main(args):
     pass
+
 
 if __name__ == '__main__':
     main(sys.argv)
