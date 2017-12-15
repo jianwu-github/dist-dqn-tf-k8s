@@ -43,7 +43,7 @@ def months_between(date1, date2):
     return months
 
 
-_campaign_list = [18, 17, 16, 15, 14, 13, 12, 11, 10, 9, 8, 7, 6, 5, 4, 3]
+_campaign_list = [18, 17, 16, 15, 14, 13, 12, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2]
 
 _campaign_dates = {
     3:  9606,
@@ -157,7 +157,7 @@ def process_sample_data(input_csv_file, output_csv_file):
                 nrecproms = 0
                 nrecgifts = 0
                 totrecamt = 0.0
-                recamtpergift = 0
+                recamtpergift = 0.0
                 for prev_campaign_id in prev_campaign_ids:
                     prev_prom_date = row['ADATE_' + str(prev_campaign_id)]
                     if prev_prom_date is not None and prev_prom_date > 0:
@@ -177,7 +177,7 @@ def process_sample_data(input_csv_file, output_csv_file):
                             totrecamt += prev_gift
 
                 if totrecamt > 0 and nrecgifts > 0:
-                    recamtpergift = totrecamt / nrecgifts
+                    recamtpergift = float(totrecamt) / nrecgifts
 
                 last_prom_cal_date = None
                 for prev_campaign_id in prev_campaign_ids:
@@ -242,14 +242,35 @@ def process_sample_data(input_csv_file, output_csv_file):
                             mailedbit3 = 1
 
                 campaign_state = {
-                    'id':         row_num,
-                    'age':        age,
-                    'income':     income,
-                    'ngiftall':   ngiftall
+                    'id':             row_num,
+                    'age':            age,
+                    'income':         income,
+                    'ngiftall':       ngiftall,
+                    'numprom':        numprom,
+                    'frequency':      frequency,
+                    'recency':        recency,
+                    'lastgift':       lastgift,
+                    'ramntall':       ramntall,
+                    'nrecproms':      nrecproms,
+                    'nrecgifts':      nrecgifts,
+                    'totrecamt':      totrecamt,
+                    'recamtpergift':  recamtpergift,
+                    'promrecency':    promrecency,
+                    'timelag':        timelag,
+                    'recencyratio':   recencyratio,
+                    'promrecratio':   promrecratio,
+                    'respondedbit1':  respondedbit1,
+                    'respondedbit2':  respondedbit2,
+                    'respondedbit3':  respondedbit3,
+                    'mailedbit1':     mailedbit1,
+                    'mailedbit2':     mailedbit2,
+                    'mailedbit3':     mailedbit1
                 }
 
+                campaign_states.append(campaign_state)
 
-            # write out the training data file
+            # write out the training data file in (state, action, reward, next_state)
+            
 
             row_num += 1
 
