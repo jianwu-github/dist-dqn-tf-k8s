@@ -69,14 +69,14 @@ def _get_prev_campaign_ids(curr_campaign_id):
     return list(range(curr_campaign_id + 1, 25))
 
 
-def campaign_date_to_date(campaign_date):
+def campaign_date_to_cal_date(campaign_date):
     return datetime(year=1900 + int(campaign_date // 100),
                     month=int(campaign_date % 100),
                     day=1)
 
 
 def campaign_date_to_epoch(campaign_date):
-    return to_milliseconds(campaign_date_to_date(campaign_date) - EPOCH_TIME)
+    return to_milliseconds(campaign_date_to_cal_date(campaign_date) - EPOCH_TIME)
 
 
 def process_sample_data(input_csv_file, output_csv_file):
@@ -124,16 +124,20 @@ def process_sample_data(input_csv_file, output_csv_file):
             for campaign_id in _campaign_list:
                 campaign_date = row['ADATE_' + str(campaign_id)]
                 campaign_date = _campaign_dates.get(campaign_id) if campaign_date is None else campaign_date
+                campaign_cal_date = campaign_date_to_cal_date(campaign_date)
                 campaign_timestamp = campaign_date_to_epoch(campaign_date)
 
                 prev_campaign_ids = _get_prev_campaign_ids(campaign_id)
 
-                ngiftall = sum([row['RDATE_' + str(x)] is not None and row['RDATE_' + str(x)] > 0 for x in prev_campaign_ids])
-                numprom = sum([row['ADATE_' + str(x)] is not None and row['ADATE_' + str(x)] > 0 for x in prev_campaign_ids])
+                ngiftall = sum([row['RDATE_' + str(x)] is not None and row['RDATE_' + str(x)] > 0
+                                for x in prev_campaign_ids])
+                numprom = sum([row['ADATE_' + str(x)] is not None and row['ADATE_' + str(x)] > 0
+                               for x in prev_campaign_ids])
                 frequency = float(ngiftall) / numprom
 
                 recency = 0
                 lastgift = 0
+                last_gift_cal_date = None
                 if ngiftall > 0:
                     for prev_campaign_id in prev_campaign_ids:
                         if row['RDATE_' + str(prev_campaign_id)] is not None and row['RDATE_' + str(prev_campaign_id)] > 0:
@@ -141,12 +145,101 @@ def process_sample_data(input_csv_file, output_csv_file):
                             break
 
                     last_gift_date = row['RDATE_' + str(last_id)]
-                    last_gift_cal_date = campaign_date_to_date(last_gift_date)
-                    campaign_cal_date = campaign_date_to_date(campaign_date)
+                    last_gift_cal_date = campaign_date_to_cal_date(last_gift_date)
 
                     recency = months_between(campaign_cal_date, last_gift_cal_date)
                     lastgift = to_float(row['RAMNT_' + str(last_id)])
 
+                ramntall = sum([to_float(row['RAMNT_' + str(x)])
+                                    for x in prev_campaign_ids if row['RAMNT_' + str(x)] is not None and
+                                                                    row['RAMNT_' + str(x)] > 0])
+
+                nrecproms = 0
+                nrecgifts = 0
+                totrecamt = 0.0
+                recamtpergift = 0
+                for prev_campaign_id in prev_campaign_ids:
+                    prev_prom_date = row['ADATE_' + str(prev_campaign_id)]
+                    if prev_prom_date is not None and prev_prom_date > 0:
+                        prev_prom_cal_date = campaign_date_to_cal_date(prev_prom_date)
+
+                        if months_between(campaign_cal_date, prev_prom_cal_date) <= 6:
+                            nrecproms += 1
+
+                    prev_gift_date = row['RDATE_' + str(prev_campaign_id)]
+                    if prev_gift_date is not None and prev_gift_date > 0:
+                        prev_gift_cal_date = campaign_date_to_cal_date(prev_gift_date)
+
+                        prev_gift = to_float(row['RAMNT_' + str(prev_campaign_id)])
+
+                        if months_between(campaign_cal_date, prev_gift_cal_date) <= 6:
+                            nrecgifts += 1
+                            totrecamt += prev_gift
+
+                if totrecamt > 0 and nrecgifts > 0:
+                    recamtpergift = totrecamt / nrecgifts
+
+                last_prom_cal_date = None
+                for prev_campaign_id in prev_campaign_ids:
+                    prev_prom_date = row['ADATE_' + str(prev_campaign_id)]
+                    if prev_prom_date is not None and prev_prom_date > 0:
+                        last_prom_cal_date = campaign_date_to_cal_date(prev_prom_date)
+                        break
+
+                promrecency = 0 if last_prom_cal_date is None else months_between(campaign_cal_date, last_prom_cal_date)
+
+                first_prom_cal_date = None
+                for first_campaign_id in reversed(prev_campaign_ids):
+                    first_prom_date = row['ADATE_' + str(first_campaign_id)]
+                    if first_prom_date is not None and first_prom_date > 0:
+                        first_prom_cal_date = campaign_date_to_cal_date(first_prom_date)
+                        break
+
+                first_gift_cal_date = None
+                for first_campaign_id in reversed(prev_campaign_ids):
+                    first_gift_date = row['RDATE_' + str(first_campaign_id)]
+                    if first_gift_date is not None and first_gift_date > 0:
+                        first_gift_cal_date = campaign_date_to_cal_date(first_gift_date)
+                        break
+
+                timelag = 0
+                if first_prom_cal_date is not None and first_gift_cal_date is not None:
+                    timelag = months_between(first_gift_cal_date, first_prom_cal_date)
+
+                recencyratio = float(recency) / timelag if timelag > 0 else 0.0
+                promrecratio = float(promrecency) / timelag if timelag > 0 else 0.0
+
+                respondedbit1 = 0
+                respondedbit2 = 0
+                respondedbit3 = 0
+                for prev_campaign_id in prev_campaign_ids:
+                    prev_gift_date = row['RDATE_' + str(prev_campaign_id)]
+                    if prev_gift_date is not None and prev_gift_date > 0:
+                        prev_gift_cal_date = campaign_date_to_cal_date(prev_gift_date)
+                        months = months_between(campaign_cal_date, prev_gift_cal_date)
+
+                        if months == 1:
+                            respondedbit1 = 1
+                        elif months == 2:
+                            respondedbit2 = 1
+                        elif months == 3:
+                            respondedbit3 = 1
+
+                mailedbit1 = 0
+                mailedbit2 = 0
+                mailedbit3 = 0
+                for prev_campaign_id in prev_campaign_ids:
+                    prev_prom_date = row['ADATE_' + str(prev_campaign_id)]
+                    if prev_prom_date is not None and prev_prom_date > 0:
+                        prev_prom_cal_date = campaign_date_to_cal_date(prev_prom_date)
+                        months = months_between(campaign_cal_date, prev_prom_cal_date)
+
+                        if months == 1:
+                            mailedbit1 = 1
+                        elif months == 2:
+                            mailedbit2 = 1
+                        elif months == 3:
+                            mailedbit3 = 1
 
                 campaign_state = {
                     'id':         row_num,
