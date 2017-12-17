@@ -71,8 +71,9 @@ def _get_prev_campaign_ids(curr_campaign_id):
 
 
 def campaign_date_to_cal_date(campaign_date):
-    return datetime(year=1900 + int(campaign_date // 100),
-                    month=int(campaign_date % 100),
+    campaign_date_val = int(campaign_date)
+    return datetime(year=1900 + int(campaign_date_val // 100),
+                    month=int(campaign_date_val % 100),
                     day=1)
 
 
@@ -80,7 +81,7 @@ def campaign_date_to_epoch(campaign_date):
     return to_milliseconds(campaign_date_to_cal_date(campaign_date) - EPOCH_TIME)
 
 
-def process_sample_data(input_csv_file, output_csv_file):
+def process_input_data(input_csv_file, output_csv_file):
     """
     Extract features from raw data:
     01. age:              individual’s age
@@ -110,7 +111,8 @@ def process_sample_data(input_csv_file, output_csv_file):
     action:               whether mailed in current promotion
     """
     with open(input_csv_file, 'r') as input_csv, open(output_csv_file, 'w') as output_csv:
-        csv_reader = csv.DictReader(input_csv)
+        # fix "_csv.Error: line contains NULL byte"
+        csv_reader = csv.DictReader(x.replace('\0', '') for x in input_csv)
 
         training_file_headers = ['correlation_id',
                                  'timestamp',
@@ -134,33 +136,53 @@ def process_sample_data(input_csv_file, output_csv_file):
 
             for campaign_id in _campaign_list:
                 campaign_date = row['ADATE_' + str(campaign_id)]
-                action = DEFAULT_NONE_VALUE
-                if campaign_date is not None and campaign_date > 0:
-                    action = 1
+                if campaign_date is not None and campaign_date.strip() and int(campaign_date) > 0:
+                    curr_campaign_date = campaign_date
+                else:
+                    curr_campaign_date = _campaign_dates.get(campaign_id)
 
-                curr_donation = row['RAMNT_' + str(campaign_id)]
-                reward = float(DEFAULT_NONE_VALUE) if action == 0 else (-1 * DEFAULT_MAILING_COST)
-                if curr_donation is not None and curr_donation > 0:
-                    reward = float(curr_donation) + reward
-
-                curr_campaign_date = _campaign_dates.get(campaign_id) if campaign_date is None else campaign_date
                 curr_campaign_cal_date = campaign_date_to_cal_date(curr_campaign_date)
                 curr_campaign_timestamp = campaign_date_to_epoch(curr_campaign_date)
 
+                action = DEFAULT_NONE_VALUE
+                if campaign_date is not None and campaign_date.strip() and int(campaign_date) > 0:
+                    action = 1
+
+                if campaign_id > 2:
+                    curr_donation = row['RAMNT_' + str(campaign_id)]
+                    reward = float(DEFAULT_NONE_VALUE) if action == 0 else (-1 * DEFAULT_MAILING_COST)
+
+                    # print("curr_donation: " + curr_donation)
+
+                    if curr_donation is not None and curr_donation.strip() and float(curr_donation) > 0:
+                        reward = float(curr_donation) + reward
+                else:
+                    # no donation info for the latest campaign id = 2
+                    reward = float(DEFAULT_NONE_VALUE)
+
                 prev_campaign_ids = _get_prev_campaign_ids(campaign_id)
 
-                ngiftall = sum([row['RDATE_' + str(x)] is not None and row['RDATE_' + str(x)] > 0
-                                for x in prev_campaign_ids])
-                numprom = sum([row['ADATE_' + str(x)] is not None and row['ADATE_' + str(x)] > 0
-                               for x in prev_campaign_ids])
-                frequency = float(ngiftall) / numprom
+                ngiftall = 0
+                for prev_campaign_id in prev_campaign_ids:
+                    prev_donation_date = row['RDATE_' + str(prev_campaign_id)]
+                    if prev_donation_date is not None and prev_donation_date.strip() and int(prev_donation_date) > 0:
+                        ngiftall += 1
+
+                numprom = 0
+                for prev_campaign_id in prev_campaign_ids:
+                    prev_prom_date = row['ADATE_' + str(prev_campaign_id)]
+                    if prev_prom_date is not None and prev_prom_date.strip() and int(prev_prom_date) > 0:
+                        numprom += 1
+
+                frequency = float(ngiftall) / numprom if numprom > 0 else float(DEFAULT_NONE_VALUE)
 
                 recency = 0
                 lastgift = 0
                 if ngiftall > 0:
                     for prev_campaign_id in prev_campaign_ids:
-                        if row['RDATE_' + str(prev_campaign_id)] is not None and row['RDATE_' + str(prev_campaign_id)] > 0:
-                            last_id = id
+                        prev_prom_date = row['RDATE_' + str(prev_campaign_id)]
+                        if prev_prom_date is not None and prev_prom_date.strip() and int(prev_prom_date) > 0:
+                            last_id = prev_campaign_id
                             break
 
                     last_gift_date = row['RDATE_' + str(last_id)]
@@ -170,7 +192,7 @@ def process_sample_data(input_csv_file, output_csv_file):
                     lastgift = to_float(row['RAMNT_' + str(last_id)])
 
                     related_prom_date = row['RDATE_' + str(last_id)]
-                    if related_prom_date is not None and related_prom_date > 0:
+                    if related_prom_date is not None and related_prom_date.strip() and int(related_prom_date) > 0:
                         lastgift = lastgift - DEFAULT_MAILING_COST
 
                 # including mailing cost when computing reward
@@ -180,12 +202,12 @@ def process_sample_data(input_csv_file, output_csv_file):
                     prev_donation = row['RAMNT_' + str(prev_campaign_id)]
 
                     prev_ramnt = float(DEFAULT_NONE_VALUE)
-                    if prev_donation is None:
+                    if prev_donation is None or not prev_donation.strip():
                         prev_ramnt = 0.0
                     else:
                         prev_ramnt = float(prev_donation)
 
-                        if prev_prom_date is not None and prev_prom_date > 0:
+                        if prev_prom_date is not None and prev_prom_date.strip() and int(prev_prom_date) > 0:
                             prev_ramnt = prev_ramnt - DEFAULT_MAILING_COST
 
                     ramntall += prev_ramnt
@@ -197,7 +219,7 @@ def process_sample_data(input_csv_file, output_csv_file):
                 for prev_campaign_id in prev_campaign_ids:
                     prev_prom_date = row['ADATE_' + str(prev_campaign_id)]
                     prev_action = 0
-                    if prev_prom_date is not None and prev_prom_date > 0:
+                    if prev_prom_date is not None and prev_prom_date.strip() and int(prev_prom_date) > 0:
                         prev_prom_cal_date = campaign_date_to_cal_date(prev_prom_date)
                         prev_action = 1
 
@@ -205,7 +227,7 @@ def process_sample_data(input_csv_file, output_csv_file):
                             nrecproms += 1
 
                     prev_gift_date = row['RDATE_' + str(prev_campaign_id)]
-                    if prev_gift_date is not None and prev_gift_date > 0:
+                    if prev_gift_date is not None and prev_gift_date.strip() and int(prev_gift_date) > 0:
                         prev_gift_cal_date = campaign_date_to_cal_date(prev_gift_date)
 
                         prev_gift = to_float(row['RAMNT_' + str(prev_campaign_id)])
@@ -222,7 +244,7 @@ def process_sample_data(input_csv_file, output_csv_file):
                 last_prom_cal_date = None
                 for prev_campaign_id in prev_campaign_ids:
                     prev_prom_date = row['ADATE_' + str(prev_campaign_id)]
-                    if prev_prom_date is not None and prev_prom_date > 0:
+                    if prev_prom_date is not None and prev_prom_date.strip() and int(prev_prom_date) > 0:
                         last_prom_cal_date = campaign_date_to_cal_date(prev_prom_date)
                         break
 
@@ -231,14 +253,14 @@ def process_sample_data(input_csv_file, output_csv_file):
                 first_prom_cal_date = None
                 for first_campaign_id in reversed(prev_campaign_ids):
                     first_prom_date = row['ADATE_' + str(first_campaign_id)]
-                    if first_prom_date is not None and first_prom_date > 0:
+                    if first_prom_date is not None and first_prom_date.strip() and int(first_prom_date) > 0:
                         first_prom_cal_date = campaign_date_to_cal_date(first_prom_date)
                         break
 
                 first_gift_cal_date = None
                 for first_campaign_id in reversed(prev_campaign_ids):
                     first_gift_date = row['RDATE_' + str(first_campaign_id)]
-                    if first_gift_date is not None and first_gift_date > 0:
+                    if first_gift_date is not None and first_gift_date.strip() and int(first_gift_date) > 0:
                         first_gift_cal_date = campaign_date_to_cal_date(first_gift_date)
                         break
 
@@ -254,7 +276,7 @@ def process_sample_data(input_csv_file, output_csv_file):
                 respondedbit3 = 0
                 for prev_campaign_id in prev_campaign_ids:
                     prev_gift_date = row['RDATE_' + str(prev_campaign_id)]
-                    if prev_gift_date is not None and prev_gift_date > 0:
+                    if prev_gift_date is not None and prev_gift_date.strip() and int(prev_gift_date) > 0:
                         prev_gift_cal_date = campaign_date_to_cal_date(prev_gift_date)
                         months = months_between(curr_campaign_cal_date, prev_gift_cal_date)
 
@@ -270,7 +292,7 @@ def process_sample_data(input_csv_file, output_csv_file):
                 mailedbit3 = 0
                 for prev_campaign_id in prev_campaign_ids:
                     prev_prom_date = row['ADATE_' + str(prev_campaign_id)]
-                    if prev_prom_date is not None and prev_prom_date > 0:
+                    if prev_prom_date is not None and prev_prom_date.strip() and int(prev_prom_date) > 0:
                         prev_prom_cal_date = campaign_date_to_cal_date(prev_prom_date)
                         months = months_between(curr_campaign_cal_date, prev_prom_cal_date)
 
@@ -304,7 +326,7 @@ def process_sample_data(input_csv_file, output_csv_file):
                     'respondedbit3':  respondedbit3,
                     'mailedbit1':     mailedbit1,
                     'mailedbit2':     mailedbit2,
-                    'mailedbit3':     mailedbit1,
+                    'mailedbit3':     mailedbit3,
                     'timestamp':      curr_campaign_timestamp,
                     'action':         action,
                     'reward':         reward
@@ -343,14 +365,43 @@ def process_sample_data(input_csv_file, output_csv_file):
                                               curr_state['mailedbit2'],
                                               curr_state['mailedbit3']
                                               ])
+                training_data['action'] = str(curr_state['action'])
+                training_data['reward'] = str(curr_state['reward'])
+                training_data['next_state'] = str([next_state['age'],
+                                                   next_state['income'],
+                                                   next_state['ngiftall'],
+                                                   next_state['numprom'],
+                                                   next_state['frequency'],
+                                                   next_state['recency'],
+                                                   next_state['lastgift'],
+                                                   next_state['ramntall'],
+                                                   next_state['nrecproms'],
+                                                   next_state['nrecgifts'],
+                                                   next_state['totrecamt'],
+                                                   next_state['recamtpergift'],
+                                                   next_state['promrecency'],
+                                                   next_state['timelag'],
+                                                   next_state['recencyratio'],
+                                                   next_state['promrecratio'],
+                                                   next_state['respondedbit1'],
+                                                   next_state['respondedbit2'],
+                                                   next_state['respondedbit3'],
+                                                   next_state['mailedbit1'],
+                                                   next_state['mailedbit2'],
+                                                   next_state['mailedbit3']
+                                                   ])
+                training_data['done'] = str(i == 15)
                 
-
+                csv_writer.writerow(training_data)
 
             row_num += 1
 
 
 def main(args):
-    pass
+    input_data_file = "data/input_data.csv"
+    output_data_file = "data/training_data.csv"
+
+    process_input_data(input_data_file, output_data_file)
 
 
 if __name__ == '__main__':
