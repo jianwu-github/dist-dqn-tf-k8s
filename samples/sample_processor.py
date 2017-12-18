@@ -20,7 +20,7 @@ def to_float(val):
 
 
 def to_milliseconds(time_delta):
-    return time_delta.days * 86400000 + time_delta.seconds * 1000 + time_delta.microseconds / 1000
+    return int(time_delta.days * 86400000 + time_delta.seconds * 1000 + time_delta.microseconds / 1000)
 
 
 def months_between(date1, date2):
@@ -96,16 +96,17 @@ def process_input_data(input_csv_file, output_csv_file):
     10. nrecgifts:        num. of recent gifts(last6 mo.)
     11. totrecamt:        total amount of recent gifts(6mo.)
     12. recamtpergift:    recent gift amount per gift(6mo.)
-    13. promrecency:      num. of months since last promotion
-    14. timelag:          num. of mo’s from first prom to gift
-    15. recencyratio:     recency / timelag
-    16. promrecratio:     promrecency / timelag
-    17. respondedbit[1]:  whether responded last month
-    18. respondedbit[2]:  whether responded 2 months ago
-    19. respondedbit[3]:  whether responded 3 months ago
-    20. mailedbit[1]:     whether promotion mailed last month
-    21. mailedbit[2]:     whether promotion mailed 2 mo’s ago
-    22. mailedbit[3]:     whether promotion mailed 3 mo’s ago
+    13. recamtperprom:    recent gift amount per prom(6mo.)
+    14. promrecency:      num. of months since last promotion
+    15. timelag:          num. of mo’s from first prom to gift
+    16. recencyratio:     recency / timelag
+    17. promrecratio:     promrecency / timelag
+    18. respondedbit[1]:  whether responded last month
+    19. respondedbit[2]:  whether responded 2 months ago
+    20. respondedbit[3]:  whether responded 3 months ago
+    21. mailedbit[1]:     whether promotion mailed last month
+    22. mailedbit[2]:     whether promotion mailed 2 mo’s ago
+    23. mailedbit[3]:     whether promotion mailed 3 mo’s ago
 
     Recorded Action:
     action:               whether mailed in current promotion
@@ -216,6 +217,7 @@ def process_input_data(input_csv_file, output_csv_file):
                 nrecgifts = 0
                 totrecamt = 0.0
                 recamtpergift = 0.0
+                recamtperprom = 0.0
                 for prev_campaign_id in prev_campaign_ids:
                     prev_prom_date = row['ADATE_' + str(prev_campaign_id)]
                     prev_action = 0
@@ -240,6 +242,9 @@ def process_input_data(input_csv_file, output_csv_file):
 
                 if totrecamt > 0 and nrecgifts > 0:
                     recamtpergift = float(totrecamt) / nrecgifts
+
+                if totrecamt > 0 and nrecproms > 0:
+                    recamtperprom = float(totrecamt) / nrecproms
 
                 last_prom_cal_date = None
                 for prev_campaign_id in prev_campaign_ids:
@@ -267,6 +272,9 @@ def process_input_data(input_csv_file, output_csv_file):
                 timelag = 0
                 if first_prom_cal_date is not None and first_gift_cal_date is not None:
                     timelag = months_between(first_gift_cal_date, first_prom_cal_date)
+
+                    # plus 1 means less than one month count as one month to produce recencyratio and promrecration
+                    timelag += 1
 
                 recencyratio = float(recency) / timelag if timelag > 0 else 0.0
                 promrecratio = float(promrecency) / timelag if timelag > 0 else 0.0
@@ -317,6 +325,7 @@ def process_input_data(input_csv_file, output_csv_file):
                     'nrecgifts':      nrecgifts,
                     'totrecamt':      totrecamt,
                     'recamtpergift':  recamtpergift,
+                    'recamtperprom':  recamtperprom,
                     'promrecency':    promrecency,
                     'timelag':        timelag,
                     'recencyratio':   recencyratio,
@@ -354,6 +363,7 @@ def process_input_data(input_csv_file, output_csv_file):
                                               curr_state['nrecgifts'],
                                               curr_state['totrecamt'],
                                               curr_state['recamtpergift'],
+                                              curr_state['recamtperprom'],
                                               curr_state['promrecency'],
                                               curr_state['timelag'],
                                               curr_state['recencyratio'],
@@ -379,6 +389,7 @@ def process_input_data(input_csv_file, output_csv_file):
                                                    next_state['nrecgifts'],
                                                    next_state['totrecamt'],
                                                    next_state['recamtpergift'],
+                                                   next_state['recamtperprom'],
                                                    next_state['promrecency'],
                                                    next_state['timelag'],
                                                    next_state['recencyratio'],
