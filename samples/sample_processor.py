@@ -273,8 +273,10 @@ def process_input_data(input_csv_file, output_csv_file):
                 if first_prom_cal_date is not None and first_gift_cal_date is not None:
                     timelag = months_between(first_gift_cal_date, first_prom_cal_date)
 
-                    # plus 1 means less than one month count as one month to produce recencyratio and promrecration
-                    timelag += 1
+                    # For timelag less than one month, using 0.5 as estimated value
+                    # to generate non-zero recencyratio and promrecratio
+                    if timelag == 0:
+                        timelag = 0.5
 
                 recencyratio = float(recency) / timelag if timelag > 0 else 0.0
                 promrecratio = float(promrecency) / timelag if timelag > 0 else 0.0
