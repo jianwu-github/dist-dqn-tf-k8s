@@ -74,8 +74,8 @@ def process_data(input_csv_file, output_stats_file):
         csv_writer.writerow({'row_counts':   str(row_counts),
                      'reward_max':   str(max_reward),
                      'reward_mean':  str(reward_mean),
-                     'state_mean':   str(state_mean),
-                     'state_std':    str(state_std)
+                     'state_mean':   np.array2string(state_mean),
+                     'state_std':    np.array2string(state_std)
                      })
 
 

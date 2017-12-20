@@ -1,6 +1,7 @@
 import ast
 import csv
 import sys
+import time
 
 from contextlib import ExitStack
 
@@ -10,10 +11,12 @@ import numpy as np
 
 from sklearn.cluster import KMeans
 
+CLUSTER_FIELDS = ['label', 'centroid']
+
 
 def _parse_state(state):
     if state.startswith("[") and state.endswith("]"):
-        state_str_vals = state[1:-1].split(",")
+        state_str_vals = state[1:-1].split(",") if state.find(",") >= 0 else state[1:-1].split()
 
         state_value = []
         for val in state_str_vals:
@@ -36,7 +39,14 @@ def build_state_cluster(input_csv_file, stats_csv_file, output_csv_file, num_of_
         state_mean = _parse_state(stats_row['state_mean'])
         state_std = _parse_state(stats_row['state_std'])
 
+        print("\nState Mean: ==================================================")
+        pprint.pprint(state_mean)
+        print("\nState Std: ===================================================")
+        pprint.pprint(state_std)
+
         output_csv = ctx_stack.enter_context(open(output_csv_file, 'w'))
+        output_csv_writer = csv.DictWriter(output_csv, fieldnames=CLUSTER_FIELDS)
+        output_csv_writer.writeheader()
 
         state_list = []
 
@@ -51,10 +61,23 @@ def build_state_cluster(input_csv_file, stats_csv_file, output_csv_file, num_of_
 
             if ast.literal_eval(raw_done):
                 next_state_val = _parse_state(raw_next_state)
-                next_norm_state = (next_state_val - state_mean) / stated_std
+                next_norm_state = (next_state_val - state_mean) / state_std
                 state_list.append(next_norm_state)
 
         # building cluster
+        print("Building {} clusters for total of {} states ...".format(num_of_clusters, len(state_list)))
+        start = time.process_time()
+        kmeans = KMeans(n_clusters=num_of_clusters)
+        kmeans.fit(state_list)
+        elapsed_time = time.process_time() - start
+        print("Done! The building time is {} seconds".format(elapsed_time))
+
+        labels = kmeans.labels_
+        print("num of labels: {}".format(len(labels)))
+
+        centroids = kmeans.cluster_centers_
+        for l in range(num_of_clusters):
+            output_csv_writer.writerow({'label': l, 'centroid': str(centroids[l])})
 
 
 def main(args):
@@ -63,7 +86,7 @@ def main(args):
 
     output_data_file = 'data/state_cluster_centers.csv'
 
-    num_of_clusters = 700
+    num_of_clusters = 250
 
     build_state_cluster(input_data_file, input_stats_file, output_data_file, num_of_clusters)
 

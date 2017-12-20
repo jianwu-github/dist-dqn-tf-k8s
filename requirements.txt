@@ -10,5 +10,6 @@ numpy
 scipy
 pandas
 h5py
+sklearn
 opencv-python
 tensorflow
