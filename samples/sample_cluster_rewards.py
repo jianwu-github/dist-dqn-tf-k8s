@@ -40,7 +40,8 @@ def _parse_cluster(cluster):
         raise ValueError("Invalid Cluster Value: " + cluster)
 
 
-def count_cluster_rewards_dist(input_data_file, input_stats_file, input_cluster_file, input_model_file, output_data_file):
+def count_cluster_rewards_dist(input_data_file, input_stats_file, input_cluster_file,
+                               input_model_file, num_of_clusters, output_data_file):
     kmeans_model = joblib.load(input_model_file)
 
     with ExitStack() as ctx_stack:
@@ -67,16 +68,27 @@ def count_cluster_rewards_dist(input_data_file, input_stats_file, input_cluster_
             clusters.append({cluster_row['label']: _parse_cluster(cluster_row['centroid'])})
 
         cluster_rewards = {}
+        for cluster_id in range(num_of_clusters):
+            cluster_rewards[cluster_id] = {}
 
         for row in input_csv_reader:
             raw_state = row['state']
             state_val = _parse_state(raw_state)
             norm_state = (state_val - state_mean) / state_std
 
-            reward = row['reward']
-            reward_val = float(reward)
+            action = row['action']
+            if int(action) == 1:
+                reward = row['reward']
+                reward_val = float(reward)
 
+                cluster_id = kmeans_model.predict(norm_state)
 
+                if cluster_rewards[cluster_id].has_key(reward_val):
+                    cluster_rewards[cluster_id][reward_val] += 1
+                else:
+                    cluster_rewards[cluster_id][reward_val] = 1
+
+                
 def main(args):
     num_of_clusters = 250
 
@@ -87,7 +99,8 @@ def main(args):
 
     output_data_file = 'data/state_cluster_rewards.csv'
 
-    count_cluster_rewards_dist(input_data_file, input_stats_file, input_cluster_file, input_model_file, output_data_file)
+    count_cluster_rewards_dist(input_data_file, input_stats_file, input_cluster_file,
+                               input_model_file, num_of_clusters, output_data_file)
 
 
 if __name__ == '__main__':
