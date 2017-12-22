@@ -10,6 +10,8 @@ import pprint
 import numpy as np
 
 from sklearn.cluster import KMeans
+from sklearn.externals import joblib
+
 
 CLUSTER_FIELDS = ['label', 'centroid']
 
@@ -27,7 +29,7 @@ def _parse_state(state):
         raise ValueError("Invalid State Value: " + state)
 
 
-def build_state_cluster(input_csv_file, stats_csv_file, output_csv_file, num_of_clusters):
+def build_state_cluster(input_csv_file, stats_csv_file, output_csv_file, output_model_file, num_of_clusters):
     with ExitStack() as ctx_stack:
         input_csv = ctx_stack.enter_context(open(input_csv_file, 'r'))
         input_csv_reader = csv.DictReader(input_csv)
@@ -79,16 +81,21 @@ def build_state_cluster(input_csv_file, stats_csv_file, output_csv_file, num_of_
         for l in range(num_of_clusters):
             output_csv_writer.writerow({'label': l, 'centroid': str(centroids[l])})
 
+        # persist KMeans Cluster model to disk
+        joblib.dump(kmeans, output_model_file)
+
 
 def main(args):
+    num_of_clusters = 250
+
     input_data_file = 'data/training_data.csv'
     input_stats_file = 'data/training_data_norm_stats.csv'
 
     output_data_file = 'data/state_cluster_centers.csv'
+    output_model_file = 'data/kmeans_' + str(num_of_clusters) + "_model.pkl"
 
-    num_of_clusters = 250
 
-    build_state_cluster(input_data_file, input_stats_file, output_data_file, num_of_clusters)
+    build_state_cluster(input_data_file, input_stats_file, output_data_file, output_model_file, num_of_clusters)
 
 
 if __name__ == '__main__':
