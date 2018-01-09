@@ -62,13 +62,17 @@ def count_cluster_rewards_dist(input_data_file, input_stats_file, input_cluster_
 
         cluster_csv = ctx_stack.enter_context(open(input_cluster_file, 'r'))
         cluster_csv_reader = csv.DictReader(cluster_csv)
-        clusters = []
+        cluster_centroids = []
 
         for cluster_row in cluster_csv_reader:
-            clusters.append({cluster_row['label']: _parse_cluster(cluster_row['centroid'])})
+            cluster_centroids.append({cluster_row['label']: _parse_cluster(cluster_row['centroid'])})
 
+        cluster_no_actions = {}
+        cluster_actions = {}
         cluster_rewards = {}
         for cluster_id in range(num_of_clusters):
+            cluster_no_actions[cluster_id] = 0
+            cluster_actions[cluster_id] = 0
             cluster_rewards[cluster_id] = {}
 
         for row in input_csv_reader:
@@ -76,17 +80,29 @@ def count_cluster_rewards_dist(input_data_file, input_stats_file, input_cluster_
             state_val = _parse_state(raw_state)
             norm_state = (state_val - state_mean) / state_std
 
+            cluster_id = kmeans_model.predict(norm_state)
+
             action = row['action']
             if int(action) == 1:
+                cluster_actions[cluster_id] += 1
+
                 reward = row['reward']
                 reward_val = float(reward)
-
-                cluster_id = kmeans_model.predict(norm_state)
 
                 if cluster_rewards[cluster_id].has_key(reward_val):
                     cluster_rewards[cluster_id][reward_val] += 1
                 else:
                     cluster_rewards[cluster_id][reward_val] = 1
+            else:
+                cluster_no_actions[cluster_id] += 1
+
+        # normalize reward distribution per cluster
+        for cluster_id in range(num_of_clusters):
+            curr_cluster_actions = cluster_actions[cluster_id]
+
+            if curr_cluster_actions > 0:
+                curr_cluster_rewards = cluster_rewards[cluster_id]
+
 
                 
 def main(args):
