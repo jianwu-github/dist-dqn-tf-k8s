@@ -1,10 +1,11 @@
-import ast
 import csv
 import sys
-import time
 
-from collections import Counter
+from collections import OrderedDict
 from contextlib import ExitStack
+from operator import itemgetter
+
+from json_tricks import dump
 
 import pprint
 
@@ -70,6 +71,7 @@ def count_cluster_rewards_dist(input_data_file, input_stats_file, input_cluster_
         cluster_no_actions = {}
         cluster_actions = {}
         cluster_rewards = {}
+        cluster_reward_dist = OrderedDict()
         for cluster_id in range(num_of_clusters):
             cluster_no_actions[cluster_id] = 0
             cluster_actions[cluster_id] = 0
@@ -102,9 +104,22 @@ def count_cluster_rewards_dist(input_data_file, input_stats_file, input_cluster_
 
             if curr_cluster_actions > 0:
                 curr_cluster_rewards = cluster_rewards[cluster_id]
+                reward_list = [(k, v) for (k, v) in curr_cluster_rewards.items()]
+                reward_list = sorted(reward_list, key=itemgetter(0))
+                normalized_reward_list = [(k, float(v) / float(curr_cluster_actions)) for (k, v) in reward_list]
+
+                reward_dist = OrderedDict()
+                reward_dist[normalized_reward_list[0][0]] = normalized_reward_list[0][1]
+                for i in range(1, len(normalized_reward_list)):
+                    reward_dist[normalized_reward_list[i][0]] = normalized_reward_list[i - 1][1] + normalized_reward_list[i][1]
+
+                cluster_reward_dist[cluster_id] = reward_dist
+
+        # write out cluster reward distribution to a json file with preserved order
+        output_json = ctx_stack.enter_context(open(output_data_file, 'w'))
+        dump(cluster_reward_dist, output_json, force_flush=True, preserve_order=True)
 
 
-                
 def main(args):
     num_of_clusters = 250
 

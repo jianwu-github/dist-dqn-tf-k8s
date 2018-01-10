@@ -13,3 +13,5 @@ h5py
 sklearn
 opencv-python
 tensorflow
+json-tricks
+gym
