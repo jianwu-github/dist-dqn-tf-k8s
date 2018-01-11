@@ -88,11 +88,11 @@ def build_state_cluster(input_csv_file, stats_csv_file, output_csv_file, output_
 def main(args):
     num_of_clusters = 250
 
-    input_data_file = 'data/training_data.csv'
-    input_stats_file = 'data/training_data_norm_stats.csv'
+    input_data_file = 'data/training_data_v2.csv'
+    input_stats_file = 'data/training_data_norm_stats_v2.csv'
 
-    output_data_file = 'data/state_cluster_centers.csv'
-    output_model_file = 'data/kmeans_' + str(num_of_clusters) + "_model.pkl"
+    output_data_file = 'data/state_cluster_centers_v2.csv'
+    output_model_file = 'data/kmeans_' + str(num_of_clusters) + "_model_v2.pkl"
 
 
     build_state_cluster(input_data_file, input_stats_file, output_data_file, output_model_file, num_of_clusters)

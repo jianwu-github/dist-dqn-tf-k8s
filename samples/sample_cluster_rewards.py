@@ -123,12 +123,12 @@ def count_cluster_rewards_dist(input_data_file, input_stats_file, input_cluster_
 def main(args):
     num_of_clusters = 250
 
-    input_data_file = 'data/training_data.csv'
-    input_stats_file = 'data/training_data_norm_stats.csv'
-    input_cluster_file = 'data/state_cluster_centers.csv'
-    input_model_file = 'data/kmeans_' + str(num_of_clusters) + "_model.pkl"
+    input_data_file = 'data/training_data_v2.csv'
+    input_stats_file = 'data/training_data_norm_stats_v2.csv'
+    input_cluster_file = 'data/state_cluster_centers_v2.csv'
+    input_model_file = 'data/kmeans_' + str(num_of_clusters) + "_model_v2.pkl"
 
-    output_data_file = 'data/state_cluster_rewards.csv'
+    output_data_file = 'data/state_cluster_rewards_v2.csv'
 
     count_cluster_rewards_dist(input_data_file, input_stats_file, input_cluster_file,
                                input_model_file, num_of_clusters, output_data_file)

@@ -80,8 +80,8 @@ def process_data(input_csv_file, output_stats_file):
 
 
 def main(args):
-    input_data_file = "data/training_data.csv"
-    output_data_file = "data/training_data_norm_stats.csv"
+    input_data_file = "data/training_data_v2.csv"
+    output_data_file = "data/training_data_norm_stats_v2.csv"
 
     process_data(input_data_file, output_data_file)
 

@@ -1,4 +1,5 @@
 import csv
+import sys
 import numpy as np
 
 from collections import deque
@@ -72,8 +73,20 @@ class SampleSimulator(Env):
 
     def step(self, action):
         if action == 0:
-            pass
+            self._action = 0
+            self._reward = 0.0
         elif action == 1:
-            pass
+            self._action = 1
+
+            # compute rewards for the action
+            normalized_state = (self._state - self._state_mean) / self._state_std
+
+            # find closest cluster
+            min_distance = sys.float_info[0]
+            cluster_id = -1
+
+
+
+
         else:
             raise ValueError("Invalid Action Value: " + str(action))
