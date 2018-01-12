@@ -34,7 +34,6 @@ class SampleSimulator(Env):
     """
 
     def __init__(self, norm_stats_csv_file, cluster_center_csv_file, reward_dist_json_file):
-        # reset env to start new simulation
         self._read_norm_stats_csv_file(norm_stats_csv_file)
         self._read_cluster_center_csv_file(cluster_center_csv_file)
         self._cluster_reward_dist = load(reward_dist_json_file, preserve_order=True)
@@ -115,37 +114,82 @@ class SampleSimulator(Env):
 
         # compute next state
         next_state = []
-
-        # 01. age
         next_state[0] = self._state[0]
-
-        # 02. income
         next_state[1] = self._state[1]
 
-        # 03. ngiftall including the current campaign
+        # ngiftall including the current campaign
         if self._action > 0 and self._reward > 0:
             next_state[2] = self._state[2] + 1
         else:
             next_state[2] = self._state[2]
 
-        # 04. numprom including current campaign
+        # numprom including current campaign
         if self._action > 0:
             next_state[3] = self._state[3] + 1
         else:
             next_state[3] = self._state[3]
 
-        # 05. frequency: ngiftall / numprom
+        # frequency
         if float(next_state[3]) > 0:
             next_state[4] = float(next_state[2]) / float(next_state[3])
         else:
             next_state[4] = self._state[4]
 
-        # 06. recency:          number of months since last gift
-        # 07. lastgift:         amount in dollars of last gift
-        # 08. ramntall:         total amount of gifts to date
-        # 09. nrecproms:        num. of recent promotions(last6 mo.)
-        # 10. nrecgifts:        num. of recent gifts(last6 mo.)
-        # 11. totrecamt:        total amount of recent gifts(6mo.)
+        months = 0
+        recency = 0
+        lastgift = 0
+        for prev_reward in self._prev_rewards:
+            months += 1
+            if prev_reward > 0:
+                recency = months
+                lastgift = prev_reward
+                break
+
+        next_state[5] = recency
+        next_state[6] = lastgift
+
+        # ramntall including current campaign
+        if self._action > 0 and self._reward > 0:
+            next_state[7] = self._state[7] + self._reward
+        else:
+            next_state[7] = self._state[7]
+
+        months = 0
+        nrecproms = 1 if self._action > 0 else 0
+        for prev_action in self._prev_actions:
+            months += 1
+            if months <= 6:
+                if prev_action > 0:
+                    nrecproms += 1
+            else:
+                break
+
+        next_state[8] = nrecproms
+
+        months = 0
+        nrecgifts = 1 if self._reward > 0 else 0
+        for prev_reward in self._prev_rewards:
+            months += 1
+            if months <- 6:
+                if prev_reward > 0:
+                    nrecgifts += 1
+            else:
+                break
+
+        next_state[9] = nrecgifts
+
+        months = 0
+        totrecamt = self._reward if self._reward > 0 else 0
+        for prev_reward in self._prev_rewards:
+            months += 1
+            if months <- 6:
+                if prev_reward > 0:
+                    totrecamt += prev_reward
+            else:
+                break
+
+        next_state[10] = totrecamt
+
         # 12. recamtpergift:    recent gift amount per gift(6mo.)
         # 13. recamtperprom:    recent gift amount per prom(6mo.)
         # 14. promrecency:      num. of months since last promotion
