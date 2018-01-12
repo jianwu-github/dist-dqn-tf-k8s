@@ -8,7 +8,7 @@ from json_tricks import load
 from gym import Env
 
 
-_MAX_EPISODE_LENGTH = 20
+_MAX_EPISODE_LENGTH = 17
 
 
 def _parse_state(state):
@@ -190,15 +190,102 @@ class SampleSimulator(Env):
 
         next_state[10] = totrecamt
 
-        # 12. recamtpergift:    recent gift amount per gift(6mo.)
-        # 13. recamtperprom:    recent gift amount per prom(6mo.)
-        # 14. promrecency:      num. of months since last promotion
-        # 15. timelag:          num. of mo’s from first prom to gift
-        # 16. recencyratio:     recency / timelag
-        # 17. promrecratio:     promrecency / timelag
-        # 18. respondedbit[1]:  whether responded last month
-        # 19. respondedbit[2]:  whether responded 2 months ago
-        # 20. respondedbit[3]:  whether responded 3 months ago
-        # 21. mailedbit[1]:     whether promotion mailed last month
-        # 22. mailedbit[2]:     whether promotion mailed 2 mo’s ago
-        # 23. mailedbit[3]:     whether promotion mailed 3 mo’s ago
+        recamtpergift = 0.0
+        if totrecamt > 0 and nrecgifts > 0:
+            recamtpergift = float(totrecamt) / nrecgifts
+
+        next_state[11] = recamtpergift
+
+        recamtperprom = 0.0
+        if totrecamt > 0 and nrecproms > 0:
+            recamtperprom = float(totrecamt) / nrecproms
+
+        next_state[12] = recamtperprom
+
+        months = 0
+        promrecency = 0
+        for prev_action in self._prev_actions:
+            months += 1
+            if prev_action > 0:
+                promrecency = months
+                break
+
+        next_state[13] = promrecency
+
+        prom_months = 0
+        first_prom = 0
+        for prev_action in self._prev_actions:
+            prom_months += 1
+            if prev_action > 0:
+                first_prom = prom_months
+
+        gift_months = 0
+        first_gift = 0
+        for prev_reward in self._prev_rewards:
+            gift_months += 1
+            if prev_reward > 0:
+                first_gift = gift_months
+
+        timelag = 0
+        if first_prom > 0 and first_gift > 0:
+            timelag = first_gift - first_prom
+            if timelag == 0:
+                # For timelag happened within a month in the same campaign,
+                # using 0.5 as estimated value to generate non-zero recencyratio
+                # and promrecratio
+                timelag = 0.5
+            elif timelag < 0:
+                timelag = 0
+
+        next_state[14] = timelag
+
+        recencyratio = float(recency) / timelag if timelag > 0 else 0.0
+        promrecratio = float(promrecency) / timelag if timelag > 0 else 0.0
+
+        next_state[15] = recencyratio
+        next_state[16] = promrecratio
+
+        respondedbit1 = 0
+        respondedbit2 = 0
+        respondedbit3 = 0
+        gift_months = 0
+        for prev_reward in self._prev_rewards:
+            gift_months += 1
+            if prev_reward > 0:
+                if gift_months == 1:
+                    respondedbit1 = 1
+                elif gift_months == 2:
+                    respondedbit2 = 1
+                elif gift_months == 3:
+                    respondedbit3 = 1
+
+        next_state[17] = respondedbit1
+        next_state[18] = respondedbit2
+        next_state[19] = respondedbit3
+
+        mailedbit1 = 0
+        mailedbit2 = 0
+        mailedbit3 = 0
+        prom_months = 0
+        for prev_action in self._prev_actions:
+            prom_months += 1
+            if prev_action > 0:
+                if prom_months == 1:
+                    mailedbit1 = 1
+                elif prom_months == 2:
+                    mailedbit2 = 1
+                elif prom_months == 3:
+                    mailedbit3 = 1
+
+        next_state[20] = mailedbit1
+        next_state[21] = mailedbit2
+        next_state[22] = mailedbit3
+
+        self._prev_actions.appendleft(self._action)
+        self._prev_rewards.appendleft(self._reward)
+        self._prev_states.appendleft(self._state)
+
+        curr_state = self._state
+        self._state = next_state
+
+        return (next_state, self._reward, len(self._prev_states) == _MAX_EPISODE_LENGTH, {})
