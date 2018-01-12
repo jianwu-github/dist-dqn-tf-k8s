@@ -155,11 +155,19 @@ def process_input_data(input_csv_file, output_csv_file):
                     if prev_donation_date is not None and prev_donation_date.strip() and int(prev_donation_date) > 0:
                         ngiftall += 1
 
+                if reward > 0:
+                    # ngiftall including current campaign reward
+                    ngiftall += 1
+
                 numprom = 0
                 for prev_campaign_id in prev_campaign_ids:
                     prev_prom_date = row['ADATE_' + str(prev_campaign_id)]
                     if prev_prom_date is not None and prev_prom_date.strip() and int(prev_prom_date) > 0:
                         numprom += 1
+
+                if action > 0:
+                    # numprom including current campaign event
+                    numprom += 1
 
                 frequency = float(ngiftall) / numprom if numprom > 0 else float(DEFAULT_NONE_VALUE)
 
@@ -199,6 +207,10 @@ def process_input_data(input_csv_file, output_csv_file):
 
                     ramntall += prev_ramnt
 
+                if reward > 0:
+                    # ramntall including the current reward received
+                    ramntall += reward
+
                 nrecproms = 0
                 nrecgifts = 0
                 totrecamt = 0.0
@@ -223,6 +235,15 @@ def process_input_data(input_csv_file, output_csv_file):
                         if abs(campaign_id - prev_campaign_id) <= 6:
                             nrecgifts += 1
                             totrecamt += prev_gift
+
+                if action > 0:
+                    # nreproms including current campaign
+                    nrecproms += 1
+
+                if reward > 0:
+                    # nrecgifts and totrecamt including current campaign donation
+                    nrecgifts += 1
+                    totrecamt += reward
 
                 if totrecamt > 0 and nrecgifts > 0:
                     recamtpergift = float(totrecamt) / nrecgifts

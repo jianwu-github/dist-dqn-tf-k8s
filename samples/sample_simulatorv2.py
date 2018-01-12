@@ -1,4 +1,5 @@
 import csv
+import random
 import sys
 import numpy as np
 
@@ -21,6 +22,10 @@ def _parse_state(state):
         return np.array(state_value)
     else:
         raise ValueError("Invalid State Value: " + state)
+
+
+def _distance(x, y):
+    return np.sqrt(np.sum((x - y) * (x - y)))
 
 
 class SampleSimulator(Env):
@@ -85,8 +90,71 @@ class SampleSimulator(Env):
             min_distance = sys.float_info[0]
             cluster_id = -1
 
+            for key, value in self._cluster_centers.items():
+                curr_centroid = _parse_state(value)
+                distance = _distance(normalized_state - curr_centroid)
 
+                if distance < min_distance:
+                    min_distance = distance
+                    cluster_id = key
 
+            cluster_reward_dist = self._cluster_reward_dist[cluster_id]
 
+            # sample the reward
+            sample_val = random.random()
+            sample_reward = 0.0
+
+            for key, value in cluster_reward_dist.items():
+                if sample_val < value:
+                    sample_reward = key
+                    break
+
+            self._reward = sample_reward
         else:
             raise ValueError("Invalid Action Value: " + str(action))
+
+        # compute next state
+        next_state = []
+
+        # 01. age
+        next_state[0] = self._state[0]
+
+        # 02. income
+        next_state[1] = self._state[1]
+
+        # 03. ngiftall including the current campaign
+        if self._action > 0 and self._reward > 0:
+            next_state[2] = self._state[2] + 1
+        else:
+            next_state[2] = self._state[2]
+
+        # 04. numprom including current campaign
+        if self._action > 0:
+            next_state[3] = self._state[3] + 1
+        else:
+            next_state[3] = self._state[3]
+
+        # 05. frequency: ngiftall / numprom
+        if float(next_state[3]) > 0:
+            next_state[4] = float(next_state[2]) / float(next_state[3])
+        else:
+            next_state[4] = self._state[4]
+
+        # 06. recency:          number of months since last gift
+        # 07. lastgift:         amount in dollars of last gift
+        # 08. ramntall:         total amount of gifts to date
+        # 09. nrecproms:        num. of recent promotions(last6 mo.)
+        # 10. nrecgifts:        num. of recent gifts(last6 mo.)
+        # 11. totrecamt:        total amount of recent gifts(6mo.)
+        # 12. recamtpergift:    recent gift amount per gift(6mo.)
+        # 13. recamtperprom:    recent gift amount per prom(6mo.)
+        # 14. promrecency:      num. of months since last promotion
+        # 15. timelag:          num. of mo’s from first prom to gift
+        # 16. recencyratio:     recency / timelag
+        # 17. promrecratio:     promrecency / timelag
+        # 18. respondedbit[1]:  whether responded last month
+        # 19. respondedbit[2]:  whether responded 2 months ago
+        # 20. respondedbit[3]:  whether responded 3 months ago
+        # 21. mailedbit[1]:     whether promotion mailed last month
+        # 22. mailedbit[2]:     whether promotion mailed 2 mo’s ago
+        # 23. mailedbit[3]:     whether promotion mailed 3 mo’s ago
