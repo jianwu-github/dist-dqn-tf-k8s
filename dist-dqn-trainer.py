@@ -34,7 +34,7 @@ class FileSampler(object):
     def collect_one_episode(self):
         states, actions, rewards, next_states, dones = [], [], [], [], []
 
-        for t in xrange(self._max_step):
+        for t in range(self._max_step):
             try:
                 data = next(self._csv_file_reader)
             except StopIteration:
@@ -57,7 +57,7 @@ class FileSampler(object):
 
     def collect_one_batch(self):
         episodes = []
-        for i_episode in xrange(self._num_episodes):
+        for i_episode in range(self._num_episodes):
             episodes.append(self.collect_one_episode())
         # prepare input
         states = np.concatenate([episode["states"] for episode in episodes])
@@ -114,7 +114,7 @@ class DirSampler(object):
 
         states, actions, rewards, next_states, dones = [], [], [], [], []
 
-        for t in xrange(self._max_step):
+        for t in range(self._max_step):
             try:
                 data = next(self._csv_file_reader)
             except StopIteration:
@@ -147,7 +147,7 @@ class DirSampler(object):
 
     def collect_one_batch(self):
         episodes = []
-        for i_episode in xrange(self._num_episodes):
+        for i_episode in range(self._num_episodes):
             episodes.append(self.collect_one_episode())
         # prepare input
         states = np.concatenate([episode["states"] for episode in episodes])
@@ -343,18 +343,18 @@ def main(_):
 
             global_step = tf.Variable(0, name='global_step', trainable=False)
 
-            adam_optimizer = tf.train.AdamOptimizer(learning_rate=learning_rate)
+            rmsprop_optimizer = tf.train.RMSPropOptimizer(learning_rate=learning_rate)
 
             if synchronized_training:
                 # synchronized training across multiple workers
-                optimizer = tf.train.SyncReplicasOptimizer(adam_optimizer,
+                optimizer = tf.train.SyncReplicasOptimizer(rmsprop_optimizer,
                                                            replicas_to_aggregate=len(worker_hosts),
                                                            total_num_replicas=len(worker_hosts),
                                                            use_locking=False
                                                            )
             else:
                 # or no synchronized training
-                optimizer = adam_optimizer
+                optimizer = rmsprop_optimizer
 
             # create input placeholders
             with tf.name_scope("inputs"):
@@ -427,7 +427,7 @@ def main(_):
                     print("Start worker session without delay...")
 
                 # 450 local training steps
-                for i in xrange(450):
+                for i in range(450):
                     # if i > 0 and i % 25 == 0:
                     #     time.sleep(1)
                         
@@ -451,7 +451,7 @@ def main(_):
                     print("At timestamp: {}, the loss and global step at worker {} local step {} is {} and {}".format(timestamp, task_index, i, loss_val, gs_val))
                     i += 1
 
-                for j in xrange(60):
+                for j in range(60):
                     time.sleep(60)
                     print("Training on Worker {} has finished, waiting {} minutes to be stopped ...".format(task_index, (60 - j)))
 
