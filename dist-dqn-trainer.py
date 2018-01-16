@@ -10,6 +10,7 @@ import numpy as np
 
 import tensorflow as tf
 
+
 class FileSampler(object):
     """
     FileSampler Class is adopted from Sampler class in DQN Repository(https://github.com/abhishm/dqn) by Abhishek Mishra
@@ -17,9 +18,9 @@ class FileSampler(object):
     def __init__(self,
                  csv_file,
                  num_episodes=10,
-                 max_step=20):
+                 max_steps=20):
         self._num_episodes = num_episodes
-        self._max_step = max_step
+        self._max_steps = max_steps
         self._csv_file = csv_file
 
         self._field_names = ("state", "action", "reward", "next_state", "done")
@@ -34,7 +35,7 @@ class FileSampler(object):
     def collect_one_episode(self):
         states, actions, rewards, next_states, dones = [], [], [], [], []
 
-        for t in range(self._max_step):
+        for t in range(self._max_steps):
             try:
                 data = next(self._csv_file_reader)
             except StopIteration:
@@ -72,6 +73,7 @@ class FileSampler(object):
                     next_states=next_states,
                     dones=dones
                 )
+
 
 class DirSampler(object):
     """
@@ -163,9 +165,10 @@ class DirSampler(object):
                     dones=dones
                 )
 
+
 class ReplayBuffer(object):
     """
-    ReplayBuffer is adopted from DQN Repository(https://github.com/abhishm/dqn) by Abhishek Mishra
+    ReplayBuffer for caching and sampling data for DQN
     """
     def __init__(self, buffer_size):
         self.buffer_size = buffer_size
@@ -238,31 +241,36 @@ discount = 0.9
 learning_rate = 0.00001
 target_update_rate = 0.5
 
-sample_size = 32
-num_of_episodes_for_batch = 10
-replay_buffer_size = 10000
+samples_per_episode = 32
+episodes_per_batch = 10
+batch_size = samples_per_episode * episodes_per_batch
+
+target_update_freq = 10000
+replay_buffer_size = 50000
+num_of_holdout_states = 1000
 
 sample_csv_file = "/dqn-training-data/dqn_training_samples.csv"
 sample_csv_data_dir = "/dqn-training-data/csv-data-dir"
 
 read_from_dir = True
 
+
 def q_network(states):
-    W1 = tf.get_variable("W1", [state_dim, 20],
+    W1 = tf.get_variable("W1", [state_dim, 32],
                          initializer=tf.contrib.layers.xavier_initializer())
-    b1 = tf.get_variable("b1", [20],
+    b1 = tf.get_variable("b1", [32],
                          initializer=tf.constant_initializer(0))
     z1 = tf.matmul(states, W1) + b1
     h1 = tf.nn.elu(z1)
 
-    W2 = tf.get_variable("W2", [20, 20],
+    W2 = tf.get_variable("W2", [32, 16],
                          initializer=tf.contrib.layers.xavier_initializer())
-    b2 = tf.get_variable("b2", [20],
+    b2 = tf.get_variable("b2", [16],
                          initializer=tf.constant_initializer(0))
     z2 = tf.matmul(h1, W2) + b2
     h2 = tf.nn.elu(z2)
 
-    W3 = tf.get_variable("W3", [20, num_actions],
+    W3 = tf.get_variable("W3", [16, num_actions],
                          initializer=tf.random_normal_initializer())
     b3 = tf.get_variable("b3", [num_actions],
                          initializer=tf.constant_initializer(0))
@@ -270,8 +278,6 @@ def q_network(states):
 
     return q
 
-def getDataReader():
-    pass
 
 def main(_):
     ps_hosts = FLAGS.ps_hosts.split(",")
@@ -304,7 +310,7 @@ def main(_):
 
             # Sampler (collect trajectories recorded in sample_csv_file)
             # sampler = FileSampler(sample_csv_file, num_of_episodes_for_batch, sample_size)
-            sampler = DirSampler(sample_csv_data_dir, num_of_episodes_for_batch, sample_size)
+            sampler = DirSampler(sample_csv_data_dir, episodes_per_batch, samples_per_episode)
         else:
             # checking whether sample data file exists and start worker only after
             # the sample data file is available to process
@@ -316,10 +322,17 @@ def main(_):
             time.sleep(10)
 
             # Sampler (collect trajectories recorded in sample_csv_file)
-            sampler = FileSampler(sample_csv_file, num_of_episodes_for_batch, sample_size)
+            sampler = FileSampler(sample_csv_file, episodes_per_batch, samples_per_episode)
 
         # Initializing ReplayBuffer
         replay_buffer = ReplayBuffer(replay_buffer_size)
+
+        initial_batches = (replay_buffer_size // 5) // batch_size
+        for i in range(initial_batches):
+            initial_batch = sampler.collect_one_batch()
+            replay_buffer.add_batch(initial_batch)
+
+        holdout_states = replay_buffer.sample(num_of_holdout_states)
 
         is_chief = task_index == 0
 
@@ -330,12 +343,6 @@ def main(_):
             print("Found the previous checkpoint directory, worker crashed...???")
             shutil.rmtree(checkpoint_dir)
             print("Delete old checkpoint data under {}".format(checkpoint_dir))
-
-        # checkpoint_dir = "/tmp/dqn_train_logs/worker-" + str(task_index)
-        # print("Set checkpoint directory to {}".format(checkpoint_dir))
-        # if os.path.exists(checkpoint_dir):
-        #     shutil.rmtree(checkpoint_dir)
-        #     print("Delete old checkpoint data under {}".format(checkpoint_dir))
 
         with tf.device(tf.train.replica_device_setter(
                 worker_device="/job:worker/task:%d" % task_index,
@@ -411,6 +418,7 @@ def main(_):
             # The MonitoredTrainingSession takes care of session initialization,
             # restoring from a checkpoint, saving to a checkpoint, and closing when done
             # or an error occurs.
+            # (TODO: turn on summaries)
             with tf.train.MonitoredTrainingSession(master=server.target,
                                                    is_chief=(task_index == 0),
                                                    checkpoint_dir=checkpoint_dir,
@@ -435,7 +443,7 @@ def main(_):
                     batch = sampler.collect_one_batch()
                     replay_buffer.add_batch(batch)
 
-                    random_batch = replay_buffer.sample_batch(sample_size)  # replay buffer
+                    random_batch = replay_buffer.sample_batch(samples_per_episode)  # replay buffer
 
                     # mon_sess.run handles AbortedError in case of preempted PS.
                     gs_val, loss_val, _ = mon_sess.run([global_step, loss, train_op],
