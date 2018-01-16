@@ -86,7 +86,7 @@ def build_state_cluster(input_csv_file, stats_csv_file, output_csv_file, output_
 
 
 def main(args):
-    num_of_clusters = 250
+    num_of_clusters = 550
 
     input_data_file = 'data/training_data_v2.csv'
     input_stats_file = 'data/training_data_norm_stats_v2.csv'

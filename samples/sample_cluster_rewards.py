@@ -82,7 +82,7 @@ def count_cluster_rewards_dist(input_data_file, input_stats_file, input_cluster_
             state_val = _parse_state(raw_state)
             norm_state = (state_val - state_mean) / state_std
 
-            cluster_id = kmeans_model.predict(norm_state)
+            cluster_id = kmeans_model.predict(np.array([norm_state]))[0]
 
             action = row['action']
             if int(action) == 1:
@@ -91,7 +91,7 @@ def count_cluster_rewards_dist(input_data_file, input_stats_file, input_cluster_
                 reward = row['reward']
                 reward_val = float(reward)
 
-                if cluster_rewards[cluster_id].has_key(reward_val):
+                if reward_val in cluster_rewards[cluster_id]:
                     cluster_rewards[cluster_id][reward_val] += 1
                 else:
                     cluster_rewards[cluster_id][reward_val] = 1
@@ -117,18 +117,18 @@ def count_cluster_rewards_dist(input_data_file, input_stats_file, input_cluster_
 
         # write out cluster reward distribution to a json file with preserved order
         output_json = ctx_stack.enter_context(open(output_data_file, 'w'))
-        dump(cluster_reward_dist, output_json, force_flush=True, preserve_order=True)
+        dump(cluster_reward_dist, output_json, force_flush=True, sort_keys=False)
 
 
 def main(args):
-    num_of_clusters = 250
+    num_of_clusters = 550
 
     input_data_file = 'data/training_data_v2.csv'
     input_stats_file = 'data/training_data_norm_stats_v2.csv'
     input_cluster_file = 'data/state_cluster_centers_v2.csv'
     input_model_file = 'data/kmeans_' + str(num_of_clusters) + "_model_v2.pkl"
 
-    output_data_file = 'data/state_cluster_rewards_v2.csv'
+    output_data_file = 'data/state_cluster_rewards_v2.json'
 
     count_cluster_rewards_dist(input_data_file, input_stats_file, input_cluster_file,
                                input_model_file, num_of_clusters, output_data_file)
