@@ -250,6 +250,8 @@ target_update_freq = 10000
 replay_buffer_size = 50000
 num_of_holdout_states = 1000
 
+default_training_steps = 1000000
+
 sample_csv_file = "/dqn-training-data/dqn_training_samples.csv"
 sample_csv_data_dir = "/dqn-training-data/csv-data-dir"
 
@@ -392,28 +394,30 @@ def main(_):
             # create variables for optimization
             with tf.name_scope("optimization"):
                 q_loss = tf.abs(action_scores - q_values)
+                q_loss = tf.reduce_mean(q_loss)
                 abs_loss = tf.abs(action_scores - target_values)
                 square_loss = 0.5 * tf.pow(abs_loss, 2)
                 huber_loss = tf.where(abs_loss <= huber_loss_threshold,
                                       square_loss,
                                       huber_loss_threshold * (abs_loss - 0.5 * huber_loss_threshold))
-                huber_loss = tf.reduce_mean(huber_loss)
                 loss = tf.reduce_mean(huber_loss)
                 trainable_variables = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, scope="q_network")
                 gradients = optimizer.compute_gradients(loss, var_list=trainable_variables)
                 train_op = optimizer.apply_gradients(gradients, global_step=global_step)
-                var_norm = tf.global_norm(trainable_variables)
-                grad_norm = tf.global_norm([grad for grad, var in gradients])
 
-            # create variables for target network update
+            # For copying q network to target network periodically
             with tf.name_scope("target_network_update"):
                 target_ops = []
                 q_network_variables = tf.get_collection(tf.GraphKeys.GLOBAL_VARIABLES, scope="q_network")
                 target_network_variables = tf.get_collection(tf.GraphKeys.GLOBAL_VARIABLES, scope="target_network")
                 for v_source, v_target in zip(q_network_variables, target_network_variables):
-                    target_op = v_target.assign_sub(target_update_rate * (v_target - v_source))
+                    target_op = v_target.assign(v_source)
                     target_ops.append(target_op)
-                target_update = tf.group(*target_ops)
+                copy_q_to_target = tf.group(*target_ops)
+
+            # Collecting Training Stats through Summary Ops
+            # training_loss_stats = tf.summary.scalar('training_huber_loss', loss)
+            # q_loss_stats = tf.summary.scala('eval_q_loss', q_loss)
 
             # The StopAtStepHook handles stopping after running given steps.
             # session_hooks = [tf.train.StopAtStepHook(last_step=500)]
@@ -443,11 +447,7 @@ def main(_):
                 else:
                     print("Start worker session without delay...")
 
-                # 450 local training steps
-                for i in range(450):
-                    # if i > 0 and i % 25 == 0:
-                    #     time.sleep(1)
-                        
+                for i in range(default_training_steps):
                     print("Entering local step {} ...".format(i))
                     batch = sampler.collect_one_batch()
                     replay_buffer.add_batch(batch)
@@ -456,17 +456,28 @@ def main(_):
 
                     # mon_sess.run handles AbortedError in case of preempted PS.
                     gs_val, loss_val, _ = mon_sess.run([global_step, loss, train_op],
-                                                        {states: random_batch["states"],
+                                                       {states: random_batch["states"],
                                                         actions: random_batch["actions"],
                                                         rewards: random_batch["rewards"],
                                                         next_states: random_batch['next_states'],
                                                         dones: random_batch["dones"]})
 
-                    mon_sess.run(target_update)
+                    if i > 0 and i % target_update_freq == 0:
+                        mon_sess.run(copy_q_to_target)
 
                     timestamp = int(time.time())
-                    print("At timestamp: {}, the loss and global step at worker {} local step {} is {} and {}".format(timestamp, task_index, i, loss_val, gs_val))
-                    i += 1
+                    if i > 0 and i % 50 == 0:
+                        # collect stats data
+                        q_loss_val = mon_sess.run(q_loss,
+                                                  {states: holdout_states["states"],
+                                                   actions: holdout_states["actions"],
+                                                   rewards: holdout_states["rewards"],
+                                                   next_states: holdout_states['next_states'],
+                                                   dones: holdout_states["dones"]})
+
+                        print("At timestamp: {}, training huber loss, q loss for holdout state and global step at worker {} local step {} are {}, {} and {}".format(timestamp, task_index, i, loss_val, q_loss_val, gs_val))
+                    else:
+                        print("At timestamp: {}, the training huber loss and global step at worker {} local step {} is {} and {}".format(timestamp, task_index, i, loss_val, gs_val))
 
                 for j in range(60):
                     time.sleep(60)
