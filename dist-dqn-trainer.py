@@ -240,6 +240,7 @@ num_actions = 2
 discount = 0.9
 learning_rate = 0.00001
 target_update_rate = 0.5
+huber_loss_threshold = 100.00
 
 samples_per_episode = 32
 episodes_per_batch = 10
@@ -336,7 +337,7 @@ def main(_):
 
         is_chief = task_index == 0
 
-        checkpoint_dir = "/dqn-training-data/train_logs/worker-" + str(task_index)
+        checkpoint_dir = "sample/data/logs/worker-" + str(task_index)
         print("Set checkpoint directory to {}".format(checkpoint_dir))
 
         if os.path.exists(checkpoint_dir):
@@ -377,24 +378,32 @@ def main(_):
                 with tf.variable_scope("q_network"):
                     q_values = q_network(states)
             with tf.name_scope("action_scores"):
-                action_scores = tf.reduce_sum(tf.multiply(q_values, one_hot_actions), reduction_indices=1)
+                action_scores = tf.reduce_sum(tf.multiply(q_values, one_hot_actions), axis=1)
 
             # create variables for target-network
             with tf.name_scope("target_values"):
                 not_the_end_of_an_episode = 1.0 - tf.cast(dones, tf.float32)
                 with tf.variable_scope("target_network"):
                     target_q_values = q_network(next_states)
-                max_target_q_values = tf.reduce_max(target_q_values, reduction_indices=1)
+                max_target_q_values = tf.reduce_max(target_q_values, axis=1)
                 max_target_q_values = tf.multiply(max_target_q_values, not_the_end_of_an_episode)
                 target_values = rewards + discount * max_target_q_values
 
             # create variables for optimization
             with tf.name_scope("optimization"):
-                loss = tf.reduce_mean(tf.square(action_scores - target_values))
-                loss = tf.cond(loss <= 0.5, lambda: 0.5 * tf.pow(loss, 2), lambda: 0.5 * loss - 0.125, name="huber_loss")
+                q_loss = tf.abs(action_scores - q_values)
+                abs_loss = tf.abs(action_scores - target_values)
+                square_loss = 0.5 * tf.pow(abs_loss, 2)
+                huber_loss = tf.where(abs_loss <= huber_loss_threshold,
+                                      square_loss,
+                                      huber_loss_threshold * (abs_loss - 0.5 * huber_loss_threshold))
+                huber_loss = tf.reduce_mean(huber_loss)
+                loss = tf.reduce_mean(huber_loss)
                 trainable_variables = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, scope="q_network")
                 gradients = optimizer.compute_gradients(loss, var_list=trainable_variables)
-                train_op = optimizer.apply_gradients(gradients, global_step)
+                train_op = optimizer.apply_gradients(gradients, global_step=global_step)
+                var_norm = tf.global_norm(trainable_variables)
+                grad_norm = tf.global_norm([grad for grad, var in gradients])
 
             # create variables for target network update
             with tf.name_scope("target_network_update"):
