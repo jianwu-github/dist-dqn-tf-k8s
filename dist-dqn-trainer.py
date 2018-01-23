@@ -4,11 +4,26 @@ import random
 import shutil
 import time
 
+import pprint
+
 from collections import deque
 
 import numpy as np
 
 import tensorflow as tf
+
+
+def _parse_state(state):
+    if state.startswith("[") and state.endswith("]"):
+        state_str_vals = state[1:-1].split(",") if state.find(",") >= 0 else state[1:-1].split()
+
+        state_value = []
+        for val in state_str_vals:
+            state_value.append(float(val.strip()))
+
+        return np.array(state_value)
+    else:
+        raise ValueError("Invalid State Value: " + state)
 
 
 class FileSampler(object):
@@ -43,10 +58,10 @@ class FileSampler(object):
                 self._csv_file_reader = self._get_csv_file_reader(self._field_names, self._csv_file)
                 data = next(self._csv_file_reader)
 
-            states.append(np.array(map(lambda x: float(x.strip()), data["state"][1:-1].split(","))))
+            states.append(_parse_state(data["state"]))
             actions.append(1 if data["action"].strip() == "True" else 0)
             rewards.append(0.0 if data["reward"].strip() == "None" else float(data["reward"].strip()))
-            next_states.append(np.array(map(lambda x: float(x.strip()), data["next_state"][1:-1].split(","))))
+            next_states.append(_parse_state(data["next_state"]))
             dones.append(data["done"].lower() == "true")
 
         return dict(states=states,
@@ -205,6 +220,7 @@ class ReplayBuffer(object):
         samples = self.sample(batch_size)
         samples = zip(*samples)
         batch = {key: np.array(value) for key, value in zip(keys, samples)}
+
         return batch
 
     def count(self):
@@ -238,7 +254,7 @@ state_dim = 23
 num_actions = 2
 
 discount = 0.9
-learning_rate = 0.00001
+learning_rate = 0.000001
 target_update_rate = 0.5
 huber_loss_threshold = 100.00
 
@@ -246,11 +262,11 @@ samples_per_episode = 32
 episodes_per_batch = 10
 batch_size = samples_per_episode * episodes_per_batch
 
-target_update_freq = 10000
+target_update_freq = 5000 # 10000
 replay_buffer_size = 50000
 num_of_holdout_states = 1000
 
-default_training_steps = 200000 # 1000000
+default_training_steps = 50000 # 1000000
 
 sample_csv_file = "samples/data/training_sample_data_set1.csv"
 sample_csv_data_dir = "samples/data/"
@@ -335,7 +351,8 @@ def main(_):
             initial_batch = sampler.collect_one_batch()
             replay_buffer.add_batch(initial_batch)
 
-        holdout_states = replay_buffer.sample(num_of_holdout_states)
+        # Looks like that is not necessary to use holdout states to track loss
+        # holdout_states = replay_buffer.sample(num_of_holdout_states)
 
         is_chief = task_index == 0
 
@@ -396,8 +413,6 @@ def main(_):
 
             # create variables for optimization
             with tf.name_scope("optimization"):
-                q_loss = tf.abs(action_scores - q_values)
-                q_loss = tf.reduce_mean(q_loss)
                 abs_loss = tf.abs(action_scores - target_values)
                 square_loss = 0.5 * tf.pow(abs_loss, 2)
                 huber_loss = tf.where(abs_loss <= huber_loss_threshold,
@@ -428,7 +443,7 @@ def main(_):
             laststep_hook = tf.train.StopAtStepHook(last_step=default_training_steps)
             session_hooks.append(laststep_hook)
 
-            summary_hook = tf.train.SummarySaverHook(save_secs=1, output_dir=summary_dir, summary_op=summary_ops)
+            summary_hook = tf.train.SummarySaverHook(save_steps=50, output_dir=summary_dir, summary_op=summary_ops)
             session_hooks.append(summary_hook)
 
             # Create the hook which handles initialization and queues.
@@ -440,7 +455,6 @@ def main(_):
             # The MonitoredTrainingSession takes care of session initialization,
             # restoring from a checkpoint, saving to a checkpoint, and closing when done
             # or an error occurs.
-            # (TODO: turn on summaries)
             with tf.train.MonitoredTrainingSession(master=server.target,
                                                    is_chief=(task_index == 0),
                                                    checkpoint_dir=checkpoint_dir,
@@ -462,15 +476,20 @@ def main(_):
                     replay_buffer.add_batch(batch)
 
                     random_batch = replay_buffer.sample_batch(samples_per_episode)  # replay buffer
+                    # pprint.pprint(random_batch["states"])
+                    # pprint.pprint(random_batch["actions"])
+                    # pprint.pprint(random_batch["rewards"])
+                    # pprint.pprint(random_batch["next_states"])
+                    # pprint.pprint(random_batch["dones"])
 
                     # mon_sess.run handles AbortedError in case of preempted PS.
-                    gs_val, loss_val, _, _ = mon_sess.run([global_step, loss, train_op, summary_ops],
-                                                                         {states: random_batch["states"],
-                                                                          actions: random_batch["actions"],
-                                                                          rewards: random_batch["rewards"],
-                                                                          next_states: random_batch['next_states'],
-                                                                          dones: random_batch["dones"]
-                                                                          })
+                    gs_val, loss_val, _ = mon_sess.run([global_step, loss, train_op],
+                                                     {states: random_batch["states"],
+                                                      actions: random_batch["actions"],
+                                                      rewards: random_batch["rewards"],
+                                                      next_states: random_batch['next_states'],
+                                                      dones: random_batch["dones"]
+                                                      })
 
                     if gs_val > 0 and gs_val % target_update_freq == 0:
                         mon_sess.run(copy_q_to_target)
@@ -479,11 +498,11 @@ def main(_):
                     timestamp = int(time.time())
                     if gs_val == default_training_steps - 1:
                         print("Global step {} finished!".format(gs_val))
-                        print("At timestamp {}, global step {} on worker [], training huber lose is {}".format(timestamp, gs_val, task_index, loss_val))
+                        print("At timestamp {}, global step {} on worker {}, the loss val for curr batch is {}".format(timestamp, gs_val, task_index, loss_val))
                     else:
-                        print("Global step {} finished, next ...".format(gs_val))
+                        # print("Global step {} finished, next ...".format(gs_val))
                         if gs_val > 0 and gs_val % 50 == 0:
-                            print("At timestamp {}, global step {} on worker [], training huber loss is {}".format(timestamp, gs_val, task_index, loss_val))
+                            print("At timestamp {}, global step {} on worker {}, the loss val for curr batch is {}".format(timestamp, gs_val, task_index, loss_val))
 
                 for j in range(3):
                     print("Training on Worker {} has finished, waiting {} minutes to be stopped ...".format(task_index, (3 - j)))

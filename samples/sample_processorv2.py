@@ -111,7 +111,7 @@ def process_input_data(input_csv_file, output_csv_file):
                                  'done']
 
         csv_writer = csv.DictWriter(output_csv, fieldnames=training_file_headers)
-        csv_writer.writeheader()
+        # csv_writer.writeheader()
 
         # read and process each row
         row_num = 0
