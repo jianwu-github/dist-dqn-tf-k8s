@@ -255,7 +255,6 @@ num_actions = 2
 
 discount = 0.9
 learning_rate = 0.000001
-target_update_rate = 0.5
 huber_loss_threshold = 100.00
 
 samples_per_episode = 32
@@ -266,7 +265,7 @@ target_update_freq = 5000 # 10000
 replay_buffer_size = 50000
 num_of_holdout_states = 1000
 
-default_training_steps = 50000 # 1000000
+default_training_steps = 55000 # 1000000
 
 sample_csv_file = "samples/data/training_sample_data_set1.csv"
 sample_csv_data_dir = "samples/data/"
@@ -295,7 +294,9 @@ def q_network(states):
                          initializer=tf.constant_initializer(0))
     q = tf.matmul(h2, W3) + b3
 
-    return q
+    dqn_q_value = tf.identity(q, "dqn_q_value")
+
+    return dqn_q_value
 
 
 def main(_):
