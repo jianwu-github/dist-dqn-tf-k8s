@@ -23,7 +23,7 @@ class FileSampler(object):
         self._max_steps = max_steps
         self._csv_file = csv_file
 
-        self._field_names = ("state", "action", "reward", "next_state", "done")
+        self._field_names = ("correlation_id", "timestamp", "state", "action", "reward", "next_state", "done")
         self._csv_file_reader = self._get_csv_file_reader(self._field_names, self._csv_file)
 
     def _get_csv_file_reader(self, field_names, csv_file):
@@ -230,7 +230,7 @@ tf.app.flags.DEFINE_string("job_name", "", "One of 'ps', 'worker'")
 tf.app.flags.DEFINE_string("task_index", "0", "Index of task within the job")
 tf.app.flags.DEFINE_string("log_path", "/tmp/train", "Log path")
 tf.app.flags.DEFINE_string("data_dir", "/data", "Data dir path")
-tf.app.flags.DEFINE_boolean("sync_flag", "true", "synchronized training")
+tf.app.flags.DEFINE_boolean("sync_flag", "false", "synchronized training")
 tf.app.flags.DEFINE_string("init_wait", "10", "worker initial wait for sync sessions")
 
 # Hyperparameters
@@ -250,12 +250,12 @@ target_update_freq = 10000
 replay_buffer_size = 50000
 num_of_holdout_states = 1000
 
-default_training_steps = 1000000
+default_training_steps = 200000 # 1000000
 
-sample_csv_file = "/dqn-training-data/dqn_training_samples.csv"
-sample_csv_data_dir = "/dqn-training-data/csv-data-dir"
+sample_csv_file = "samples/data/training_sample_data_set1.csv"
+sample_csv_data_dir = "samples/data/"
 
-read_from_dir = True
+read_from_dir = False
 
 
 def q_network(states):
@@ -339,8 +339,11 @@ def main(_):
 
         is_chief = task_index == 0
 
-        checkpoint_dir = "sample/data/logs/worker-" + str(task_index)
+        checkpoint_dir = "samples/data/logs/models/worker-" + str(task_index)
         print("Set checkpoint directory to {}".format(checkpoint_dir))
+
+        summary_dir = "samples/data/logs/summary/worker-" + str(task_index)
+        print("Set summary directory to {}".format(summary_dir))
 
         if os.path.exists(checkpoint_dir):
             print("Found the previous checkpoint directory, worker crashed...???")
@@ -416,17 +419,23 @@ def main(_):
                 copy_q_to_target = tf.group(*target_ops)
 
             # Collecting Training Stats through Summary Ops
-            # training_loss_stats = tf.summary.scalar('training_huber_loss', loss)
-            # q_loss_stats = tf.summary.scala('eval_q_loss', q_loss)
+            training_loss_stats = tf.summary.scalar('training_huber_loss', loss)
+            summary_ops = tf.summary.merge_all()
 
             # The StopAtStepHook handles stopping after running given steps.
-            # session_hooks = [tf.train.StopAtStepHook(last_step=500)]
-            session_hooks = None
+            # session_hooks = None
+            session_hooks = []
+            laststep_hook = tf.train.StopAtStepHook(last_step=default_training_steps)
+            session_hooks.append(laststep_hook)
+
+            summary_hook = tf.train.SummarySaverHook(save_secs=1, output_dir=summary_dir, summary_op=summary_ops)
+            session_hooks.append(summary_hook)
 
             # Create the hook which handles initialization and queues.
             if synchronized_training:
                 make_session_hook = optimizer.make_session_run_hook(is_chief)
-                session_hooks =[make_session_hook]
+                # session_hooks =[make_session_hook]
+                session_hooks.append(make_session_hook)
 
             # The MonitoredTrainingSession takes care of session initialization,
             # restoring from a checkpoint, saving to a checkpoint, and closing when done
@@ -435,7 +444,8 @@ def main(_):
             with tf.train.MonitoredTrainingSession(master=server.target,
                                                    is_chief=(task_index == 0),
                                                    checkpoint_dir=checkpoint_dir,
-                                                   save_summaries_steps=None,
+                                                   save_checkpoint_secs=300,
+                                                   save_summaries_steps=100,
                                                    save_summaries_secs=None,
                                                    hooks=session_hooks
                                                    ) as mon_sess:
@@ -447,42 +457,37 @@ def main(_):
                 else:
                     print("Start worker session without delay...")
 
-                for i in range(default_training_steps):
-                    print("Entering local step {} ...".format(i))
+                while not mon_sess.should_stop():
                     batch = sampler.collect_one_batch()
                     replay_buffer.add_batch(batch)
 
                     random_batch = replay_buffer.sample_batch(samples_per_episode)  # replay buffer
 
                     # mon_sess.run handles AbortedError in case of preempted PS.
-                    gs_val, loss_val, _ = mon_sess.run([global_step, loss, train_op],
-                                                       {states: random_batch["states"],
-                                                        actions: random_batch["actions"],
-                                                        rewards: random_batch["rewards"],
-                                                        next_states: random_batch['next_states'],
-                                                        dones: random_batch["dones"]})
+                    gs_val, loss_val, _, _ = mon_sess.run([global_step, loss, train_op, summary_ops],
+                                                                         {states: random_batch["states"],
+                                                                          actions: random_batch["actions"],
+                                                                          rewards: random_batch["rewards"],
+                                                                          next_states: random_batch['next_states'],
+                                                                          dones: random_batch["dones"]
+                                                                          })
 
-                    if i > 0 and i % target_update_freq == 0:
+                    if gs_val > 0 and gs_val % target_update_freq == 0:
                         mon_sess.run(copy_q_to_target)
+                        print("target_network synced at global step {}".format(gs_val))
 
                     timestamp = int(time.time())
-                    if i > 0 and i % 50 == 0:
-                        # collect stats data
-                        q_loss_val = mon_sess.run(q_loss,
-                                                  {states: holdout_states["states"],
-                                                   actions: holdout_states["actions"],
-                                                   rewards: holdout_states["rewards"],
-                                                   next_states: holdout_states['next_states'],
-                                                   dones: holdout_states["dones"]})
-
-                        print("At timestamp: {}, training huber loss, q loss for holdout state and global step at worker {} local step {} are {}, {} and {}".format(timestamp, task_index, i, loss_val, q_loss_val, gs_val))
+                    if gs_val == default_training_steps - 1:
+                        print("Global step {} finished!".format(gs_val))
+                        print("At timestamp {}, global step {} on worker [], training huber lose is {}".format(timestamp, gs_val, task_index, loss_val))
                     else:
-                        print("At timestamp: {}, the training huber loss and global step at worker {} local step {} is {} and {}".format(timestamp, task_index, i, loss_val, gs_val))
+                        print("Global step {} finished, next ...".format(gs_val))
+                        if gs_val > 0 and gs_val % 50 == 0:
+                            print("At timestamp {}, global step {} on worker [], training huber loss is {}".format(timestamp, gs_val, task_index, loss_val))
 
-                for j in range(60):
+                for j in range(3):
+                    print("Training on Worker {} has finished, waiting {} minutes to be stopped ...".format(task_index, (3 - j)))
                     time.sleep(60)
-                    print("Training on Worker {} has finished, waiting {} minutes to be stopped ...".format(task_index, (60 - j)))
-
 
             print("Worker {} is stopping now!".format(task_index))
 
