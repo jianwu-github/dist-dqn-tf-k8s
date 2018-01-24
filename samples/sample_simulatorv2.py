@@ -95,14 +95,14 @@ class SampleSimulator(Env):
             cluster_id = -1
 
             for key, value in self._cluster_centers.items():
-                curr_centroid = _parse_state(value)
-                distance = _distance(normalized_state - curr_centroid)
+                curr_centroid = value
+                distance = _distance(normalized_state, curr_centroid)
 
                 if distance < min_distance:
                     min_distance = distance
                     cluster_id = key
 
-            cluster_reward_dist = self._cluster_reward_dist[cluster_id]
+            cluster_reward_dist = self._cluster_reward_dist[str(cluster_id)]
 
             # sample the reward
             sample_val = random.random()
@@ -110,7 +110,7 @@ class SampleSimulator(Env):
 
             for key, value in cluster_reward_dist.items():
                 if sample_val < value:
-                    sample_reward = key
+                    sample_reward = float(key)
                     break
 
             self._reward = sample_reward
@@ -118,27 +118,29 @@ class SampleSimulator(Env):
             raise ValueError("Invalid Action Value: " + str(action))
 
         # compute next state
-        next_state = []
-        next_state[0] = self._state[0]
-        next_state[1] = self._state[1]
+        curr_state = self._state.tolist()
+        next_state = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+
+        next_state[0] = curr_state[0]
+        next_state[1] = curr_state[1]
 
         # ngiftall including the current campaign
         if self._action > 0 and self._reward > 0:
-            next_state[2] = self._state[2] + 1
+            next_state[2] = curr_state[2] + 1
         else:
-            next_state[2] = self._state[2]
+            next_state[2] = curr_state[2]
 
         # numprom including current campaign
         if self._action > 0:
-            next_state[3] = self._state[3] + 1
+            next_state[3] = curr_state[3] + 1
         else:
-            next_state[3] = self._state[3]
+            next_state[3] = curr_state[3]
 
         # frequency
         if float(next_state[3]) > 0:
             next_state[4] = float(next_state[2]) / float(next_state[3])
         else:
-            next_state[4] = self._state[4]
+            next_state[4] = curr_state[4]
 
         months = 0
         recency = 0
@@ -155,9 +157,9 @@ class SampleSimulator(Env):
 
         # ramntall including current campaign
         if self._action > 0 and self._reward > 0:
-            next_state[7] = self._state[7] + self._reward
+            next_state[7] = curr_state[7] + self._reward
         else:
-            next_state[7] = self._state[7]
+            next_state[7] = curr_state[7]
 
         months = 0
         nrecproms = 1 if self._action > 0 else 0
@@ -290,7 +292,7 @@ class SampleSimulator(Env):
         self._prev_rewards.appendleft(self._reward)
         self._prev_states.appendleft(self._state)
 
-        curr_state = self._state
+        curr_state_val = self._state
         next_state_val = np.array(next_state)
         self._state = next_state_val
 
