@@ -4,7 +4,7 @@ import sys
 import numpy as np
 
 from collections import deque
-from json_tricks import load
+from json_tricks import loads
 from gym import Env
 
 
@@ -36,7 +36,7 @@ class SampleSimulator(Env):
     def __init__(self, norm_stats_csv_file, cluster_center_csv_file, reward_dist_json_file):
         self._read_norm_stats_csv_file(norm_stats_csv_file)
         self._read_cluster_center_csv_file(cluster_center_csv_file)
-        self._cluster_reward_dist = load(reward_dist_json_file, preserve_order=True)
+        self._cluster_reward_dist = self._read_cluster_reward_json_file(reward_dist_json_file)
 
         self._state = None
         self._action = None
@@ -48,7 +48,7 @@ class SampleSimulator(Env):
 
     def _read_norm_stats_csv_file(self, norm_stats_csv_file):
         csv_reader = csv.DictReader(open(norm_stats_csv_file, 'r'))
-        norm_stats_row = csv_reader.next()
+        norm_stats_row = next(csv_reader)
 
         self._state_mean = _parse_state(norm_stats_row['state_mean'])
         self._state_std = _parse_state(norm_stats_row['state_std'])
@@ -61,6 +61,11 @@ class SampleSimulator(Env):
             cluster_id = int(row['label'])
             centroid = _parse_state(row['centroid'])
             self._cluster_centers[cluster_id] = centroid
+
+    def _read_cluster_reward_json_file(self, reward_dist_json_file):
+        json_str = open(reward_dist_json_file, 'r').read()
+
+        return loads(json_str, preserve_order=True)
 
     def reset(self):
         self._state = None
@@ -286,6 +291,7 @@ class SampleSimulator(Env):
         self._prev_states.appendleft(self._state)
 
         curr_state = self._state
-        self._state = next_state
+        next_state_val = np.array(next_state)
+        self._state = next_state_val
 
-        return (next_state, self._reward, len(self._prev_states) == _MAX_EPISODE_LENGTH, {})
+        return (next_state_val, self._reward, len(self._prev_states) == _MAX_EPISODE_LENGTH, {})
