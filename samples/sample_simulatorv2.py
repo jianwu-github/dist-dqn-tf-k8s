@@ -7,8 +7,9 @@ from collections import deque
 from json_tricks import loads
 from gym import Env
 
+_MAX_EPISODE_LENGTH = 16
 
-_MAX_EPISODE_LENGTH = 17
+DEFAULT_NONE_VALUE = 0
 
 
 def _parse_state(state):
@@ -114,6 +115,8 @@ class SampleSimulator(Env):
                     break
 
             self._reward = sample_reward
+
+            # print("Sampling result: sample_val = {}, sample_reward = {}".format(sample_val, sample_reward))
         else:
             raise ValueError("Invalid Action Value: " + str(action))
 
@@ -140,7 +143,7 @@ class SampleSimulator(Env):
         if float(next_state[3]) > 0:
             next_state[4] = float(next_state[2]) / float(next_state[3])
         else:
-            next_state[4] = curr_state[4]
+            next_state[4] = float(DEFAULT_NONE_VALUE) # curr_state[4]
 
         months = 0
         recency = 0

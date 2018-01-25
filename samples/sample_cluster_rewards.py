@@ -46,8 +46,16 @@ def count_cluster_rewards_dist(input_data_file, input_stats_file, input_cluster_
     kmeans_model = joblib.load(input_model_file)
 
     with ExitStack() as ctx_stack:
+        training_file_headers = ['correlation_id',
+                                 'timestamp',
+                                 'state',
+                                 'action',
+                                 'reward',
+                                 'next_state',
+                                 'done']
+
         input_csv = ctx_stack.enter_context(open(input_data_file, 'r'))
-        input_csv_reader = csv.DictReader(input_csv)
+        input_csv_reader = csv.DictReader(input_csv, fieldnames=training_file_headers)
 
         stats_csv = ctx_stack.enter_context(open(input_stats_file, 'r'))
         stats_csv_reader = csv.DictReader(stats_csv)
@@ -108,12 +116,23 @@ def count_cluster_rewards_dist(input_data_file, input_stats_file, input_cluster_
                 reward_list = sorted(reward_list, key=itemgetter(0))
                 normalized_reward_list = [(k, float(v) / float(curr_cluster_actions)) for (k, v) in reward_list]
 
+                num_of_cluster_reward_items = len(normalized_reward_list)
+
                 reward_dist = OrderedDict()
                 reward_dist[normalized_reward_list[0][0]] = normalized_reward_list[0][1]
-                for i in range(1, len(normalized_reward_list)):
-                    reward_dist[normalized_reward_list[i][0]] = normalized_reward_list[i - 1][1] + normalized_reward_list[i][1]
+                prev_dist = normalized_reward_list[0][1]
+                for i in range(1, num_of_cluster_reward_items):
+                    curr_reward, curr_dist = normalized_reward_list[i]
+                    accu_dist = prev_dist + curr_dist
+
+                    reward_dist[curr_reward] = accu_dist
+
+                    prev_dist = accu_dist
 
                 cluster_reward_dist[cluster_id] = reward_dist
+
+                # print("cluster reward dist for cluster {}".format(cluster_id))
+                # pprint.pprint(reward_dist)
 
         # write out cluster reward distribution to a json file with preserved order
         output_json = ctx_stack.enter_context(open(output_data_file, 'w'))
