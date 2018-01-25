@@ -7,9 +7,7 @@ from collections import deque
 from json_tricks import loads
 from gym import Env
 
-_MAX_EPISODE_LENGTH = 16
-
-DEFAULT_NONE_VALUE = 0
+_DEFAULT_MAX_EPISODE_LENGTH = 16
 
 
 def _parse_state(state):
@@ -34,7 +32,7 @@ class SampleSimulator(Env):
     Simulating Sample Environment
     """
 
-    def __init__(self, norm_stats_csv_file, cluster_center_csv_file, reward_dist_json_file):
+    def __init__(self, norm_stats_csv_file, cluster_center_csv_file, reward_dist_json_file, max_episode_length=_DEFAULT_MAX_EPISODE_LENGTH):
         self._read_norm_stats_csv_file(norm_stats_csv_file)
         self._read_cluster_center_csv_file(cluster_center_csv_file)
         self._cluster_reward_dist = self._read_cluster_reward_json_file(reward_dist_json_file)
@@ -43,9 +41,11 @@ class SampleSimulator(Env):
         self._action = None
         self._reward = None
 
-        self._prev_states = deque(maxlen=_MAX_EPISODE_LENGTH)
-        self._prev_actions = deque(maxlen=_MAX_EPISODE_LENGTH)
-        self._prev_rewards = deque(maxlen=_MAX_EPISODE_LENGTH)
+        self._max_episode_length = max_episode_length
+
+        self._prev_states = deque(maxlen=self._max_episode_length)
+        self._prev_actions = deque(maxlen=self._max_episode_length)
+        self._prev_rewards = deque(maxlen=self._max_episode_length)
 
     def _read_norm_stats_csv_file(self, norm_stats_csv_file):
         csv_reader = csv.DictReader(open(norm_stats_csv_file, 'r'))
@@ -73,9 +73,9 @@ class SampleSimulator(Env):
         self._action = None
         self._reward = None
         
-        self._prev_states = deque(maxlen=_MAX_EPISODE_LENGTH)
-        self._prev_actions = deque(maxlen=_MAX_EPISODE_LENGTH)
-        self._prev_rewards = deque(maxlen=_MAX_EPISODE_LENGTH)
+        self._prev_states = deque(maxlen=self._max_episode_length)
+        self._prev_actions = deque(maxlen=self._max_episode_length)
+        self._prev_rewards = deque(maxlen=self._max_episode_length)
 
     def set_state(self, state):
         self.reset()
@@ -143,7 +143,7 @@ class SampleSimulator(Env):
         if float(next_state[3]) > 0:
             next_state[4] = float(next_state[2]) / float(next_state[3])
         else:
-            next_state[4] = float(DEFAULT_NONE_VALUE) # curr_state[4]
+            next_state[4] = curr_state[4]
 
         months = 0
         recency = 0
@@ -299,4 +299,4 @@ class SampleSimulator(Env):
         next_state_val = np.array(next_state)
         self._state = next_state_val
 
-        return (next_state_val, self._reward, len(self._prev_states) == _MAX_EPISODE_LENGTH, {})
+        return next_state_val, self._reward, len(self._prev_states) == self._max_episode_length, {}

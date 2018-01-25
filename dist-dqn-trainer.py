@@ -59,7 +59,15 @@ class FileSampler(object):
                 data = next(self._csv_file_reader)
 
             states.append(_parse_state(data["state"]))
-            actions.append(1 if data["action"].strip() == "True" else 0)
+
+            # one hot encoding 0 as [1.0, 0.0], 1 as [0.0, 1.0]
+            if data["action"] == "1":
+                actions.append(np.array([0.0, 1.0]))
+            elif data["action"] == "0":
+                actions.append(np.array([1.0, 0.0]))
+            else:
+                raise ValueError("Invalid Action Value: " + data["action"])
+
             rewards.append(0.0 if data["reward"].strip() == "None" else float(data["reward"].strip()))
             next_states.append(_parse_state(data["next_state"]))
             dones.append(data["done"].lower() == "true")
@@ -150,7 +158,15 @@ class DirSampler(object):
                     data = next(self._csv_file_reader)
 
             states.append(np.array(map(lambda x: float(x.strip()), data["state"][1:-1].split(","))))
-            actions.append(1 if data["action"].strip() == "True" else 0)
+
+            # one hot encoding 0 as [1.0, 0.0], 1 as [0.0, 1.0]
+            if data["action"] == "1":
+                actions.append(np.array([0.0, 1.0]))
+            elif data["action"] == "0":
+                actions.append(np.array([1.0, 0.0]))
+            else:
+                raise ValueError("Invalid Action Value: " + data["action"])
+
             rewards.append(0.0 if data["reward"].strip() == "None" else float(data["reward"].strip()))
             next_states.append(np.array(map(lambda x: float(x.strip()), data["next_state"][1:-1].split(","))))
             dones.append(data["done"].lower() == "true")
@@ -390,18 +406,17 @@ def main(_):
             # create input placeholders
             with tf.name_scope("inputs"):
                 states = tf.placeholder(tf.float32, (None, state_dim), "states")
-                actions = tf.placeholder(tf.int32, (None,), "actions")
+                actions = tf.placeholder(tf.float32, (None, num_actions), "actions")
                 rewards = tf.placeholder(tf.float32, (None,), "rewards")
                 next_states = tf.placeholder(tf.float32, (None, state_dim), "next_states")
                 dones = tf.placeholder(tf.bool, (None,), "dones")
-                one_hot_actions = tf.one_hot(actions, num_actions, axis=-1)
 
             # create variables for q-network
             with tf.name_scope("action_values"):
                 with tf.variable_scope("q_network"):
                     q_values = q_network(states)
             with tf.name_scope("action_scores"):
-                action_scores = tf.reduce_sum(tf.multiply(q_values, one_hot_actions), axis=1)
+                action_scores = tf.reduce_sum(tf.multiply(q_values, actions), axis=1)
 
             # create variables for target-network
             with tf.name_scope("target_values"):
@@ -425,6 +440,7 @@ def main(_):
                 train_op = optimizer.apply_gradients(gradients, global_step=global_step)
 
             # For copying q network to target network periodically
+            # TODO: copy variables to variables through matched variable names
             with tf.name_scope("target_network_update"):
                 target_ops = []
                 q_network_variables = tf.get_collection(tf.GraphKeys.GLOBAL_VARIABLES, scope="q_network")
